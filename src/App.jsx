@@ -40,7 +40,8 @@ import {
   CalendarDays,
   Video,
   Flag,
-  ArrowRight
+  ArrowRight,
+  RefreshCw
 } from 'lucide-react';
 import {
   BarChart,
@@ -219,6 +220,8 @@ const App = () => {
   const [vendedorProdutos, setVendedorProdutos] = useState([]);
   const [vendedorSearch, setVendedorSearch] = useState('');
   const [vendedorUploading, setVendedorUploading] = useState(false);
+  const [vendedorSyncing, setVendedorSyncing] = useState(false);
+  const [vendedorLastSync, setVendedorLastSync] = useState(localStorage.getItem('vendedor-last-sync') || null);
 
   // Load vendedor produtos
   useEffect(() => {
@@ -620,6 +623,7 @@ const App = () => {
       { id: 'recebimento', label: 'Recebimento', icon: Package, permission: 'recebimento' },
       { id: 'aguamarinha', label: 'Agua Marinha', icon: Droplets, permission: 'agua_marinha' },
       { id: 'vendedor', label: 'Area Vendedor', icon: ClipboardList, permission: 'vendedor' },
+      { id: 'analytics', label: 'Analytics', icon: BarChart3, permission: 'analytics' },
       { id: 'times', label: 'Gestao de Times', icon: Users, permission: 'times' },
       { id: 'pedidos', label: 'Pedidos Fornecedor', icon: Truck, permission: 'pedidos' },
       { id: 'precificacao', label: 'Precificacao', icon: DollarSign, permission: 'precificacao' },
@@ -983,13 +987,19 @@ const App = () => {
             {/* Lesson List */}
             <div className="lg:col-span-1 space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="font-bold text-gray-700">Aulas</h3>
-                <button onClick={() => { resetLessonForm(); setLessonForm(f => ({ ...f, order_num: lessons.length + 1 })); setShowLessonModal(true); }}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-[#6B1B8E] text-white rounded-lg text-xs font-bold hover:bg-[#5a1676]">
-                  <Plus size={14} /> Aula
-                </button>
+                <h3 className="font-bold text-gray-700">Aulas ({lessons.length})</h3>
+                <div className="flex gap-2">
+                  <button onClick={() => loadLessons(selectedCourse.id)}
+                    className="flex items-center gap-1 px-2 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-200">
+                    <RefreshCw size={12} />
+                  </button>
+                  <button onClick={() => { resetLessonForm(); setLessonForm(f => ({ ...f, order_num: lessons.length + 1 })); setShowLessonModal(true); }}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-[#6B1B8E] text-white rounded-lg text-xs font-bold hover:bg-[#5a1676]">
+                    <Plus size={14} /> Aula
+                  </button>
+                </div>
               </div>
-              <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+              <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
                 {lessons.length === 0 ? (
                   <p className="text-sm text-gray-400 text-center py-8">Nenhuma aula adicionada</p>
                 ) : lessons.map((lesson, idx) => (
@@ -1022,15 +1032,79 @@ const App = () => {
                 <div className="space-y-4">
                   <div className="bg-black rounded-2xl overflow-hidden aspect-video">
                     {activeLesson.video_url ? (
-                      <video
-                        key={activeLesson.id}
-                        controls
-                        className="w-full h-full"
-                        controlsList="nodownload"
-                      >
-                        <source src={activeLesson.video_url} type="video/mp4" />
-                        Seu navegador nao suporta o player de video.
-                      </video>
+                      (() => {
+                        const url = activeLesson.video_url;
+                        // Detectar tipo de video
+                        const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
+                        const isVimeo = url.includes('vimeo.com');
+                        const isLoom = url.includes('loom.com');
+
+                        if (isYouTube) {
+                          // Extrair video ID do YouTube
+                          let videoId = '';
+                          if (url.includes('youtu.be/')) {
+                            videoId = url.split('youtu.be/')[1]?.split('?')[0];
+                          } else if (url.includes('watch?v=')) {
+                            videoId = url.split('watch?v=')[1]?.split('&')[0];
+                          } else if (url.includes('embed/')) {
+                            videoId = url.split('embed/')[1]?.split('?')[0];
+                          }
+                          return (
+                            <iframe
+                              key={activeLesson.id}
+                              src={`https://www.youtube.com/embed/${videoId}?rel=0`}
+                              className="w-full h-full"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                              title={activeLesson.title}
+                            />
+                          );
+                        }
+
+                        if (isVimeo) {
+                          const vimeoId = url.split('vimeo.com/')[1]?.split('?')[0];
+                          return (
+                            <iframe
+                              key={activeLesson.id}
+                              src={`https://player.vimeo.com/video/${vimeoId}`}
+                              className="w-full h-full"
+                              allow="autoplay; fullscreen; picture-in-picture"
+                              allowFullScreen
+                              title={activeLesson.title}
+                            />
+                          );
+                        }
+
+                        if (isLoom) {
+                          const loomId = url.includes('/share/') ? url.split('/share/')[1]?.split('?')[0] : url.split('/embed/')[1]?.split('?')[0];
+                          return (
+                            <iframe
+                              key={activeLesson.id}
+                              src={`https://www.loom.com/embed/${loomId}`}
+                              className="w-full h-full"
+                              allowFullScreen
+                              title={activeLesson.title}
+                            />
+                          );
+                        }
+
+                        // Video direto (MP4, Supabase Storage, etc)
+                        // Nao usar crossOrigin para Supabase - causa erro de CORS
+                        const isSupabase = url.includes('supabase.co');
+                        return (
+                          <video
+                            key={activeLesson.id}
+                            controls
+                            className="w-full h-full"
+                            controlsList="nodownload"
+                            playsInline
+                            preload="auto"
+                            src={url}
+                          >
+                            Seu navegador nao suporta o player de video.
+                          </video>
+                        );
+                      })()
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-gray-500">
                         <div className="text-center">
@@ -1076,11 +1150,17 @@ const App = () => {
                       rows={2} placeholder="Descricao breve da aula" />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">URL do Video (MP4)</label>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">URL do Video</label>
                     <input type="url" value={lessonForm.video_url} onChange={e => setLessonForm({ ...lessonForm, video_url: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-200 focus:border-[#6B1B8E] outline-none"
-                      placeholder="https://... ou link do Supabase Storage" />
-                    <p className="text-xs text-gray-400 mt-1">Cole a URL publica do arquivo MP4</p>
+                      placeholder="YouTube, Vimeo, Loom ou MP4 direto" />
+                    <div className="text-xs text-gray-400 mt-1 space-y-0.5">
+                      <p>Formatos suportados:</p>
+                      <p className="text-gray-500">• YouTube: youtube.com/watch?v=xxx ou youtu.be/xxx</p>
+                      <p className="text-gray-500">• Vimeo: vimeo.com/xxx</p>
+                      <p className="text-gray-500">• Loom: loom.com/share/xxx</p>
+                      <p className="text-gray-500">• Supabase: URL publica do Storage</p>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ordem</label>
@@ -2103,6 +2183,61 @@ const App = () => {
     const [editingProduct, setEditingProduct] = useState(null);
     const [priceForm, setPriceForm] = useState({ preco_1: 0, preco_2: 0, preco_3: 0 });
 
+    // Sync with BaseLinker API
+    const syncBaseLinker = async () => {
+      setVendedorSyncing(true);
+      try {
+        const response = await fetch('/api/baselinker/products');
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.error || 'Erro ao buscar produtos');
+        }
+
+        // Map BaseLinker products to our schema
+        const products = data.products.map(p => ({
+          sku: p.sku || '',
+          nome: p.name || '',
+          ean: p.ean || '',
+          estoque: p.stock || 0,
+          preco_1: p.price1 || 0,
+          preco_2: p.price2 || 0,
+          preco_3: p.price3 || 0,
+          categoria: p.category || '',
+          marca: '',
+        }));
+
+        // Upsert to Supabase
+        let updated = 0, inserted = 0;
+        for (const prod of products) {
+          if (!prod.sku && !prod.nome) continue;
+          const { data: existing } = await supabase.from('vendedor_produtos').select('id').eq('sku', prod.sku).single();
+          if (existing) {
+            await supabase.from('vendedor_produtos').update(prod).eq('id', existing.id);
+            updated++;
+          } else {
+            await supabase.from('vendedor_produtos').insert([prod]);
+            inserted++;
+          }
+        }
+
+        // Reload from Supabase
+        const { data: refreshed } = await supabase.from('vendedor_produtos').select('*').order('nome', { ascending: true });
+        setVendedorProdutos(refreshed || []);
+
+        // Save sync timestamp
+        const now = new Date().toISOString();
+        localStorage.setItem('vendedor-last-sync', now);
+        setVendedorLastSync(now);
+
+        alert(`Sync concluido! ${inserted} novos, ${updated} atualizados. Total: ${products.length} produtos.`);
+      } catch (err) {
+        console.error('Sync error:', err);
+        alert('Erro ao sincronizar: ' + err.message);
+      }
+      setVendedorSyncing(false);
+    };
+
     // Parse CSV from BaseLinker
     const parseCSV = (text) => {
       const lines = text.split('\n').filter(l => l.trim());
@@ -2197,9 +2332,24 @@ const App = () => {
             <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
               <ClipboardList className="text-[#6B1B8E]" /> Area do Vendedor
             </h2>
-            <p className="text-sm text-gray-500 mt-1">Cadastro BaseLinker - {vendedorProdutos.length} produtos</p>
+            <p className="text-sm text-gray-500 mt-1">
+              Cadastro BaseLinker - {vendedorProdutos.length} produtos
+              {vendedorLastSync && (
+                <span className="ml-2 text-xs text-gray-400">
+                  (Ultimo sync: {new Date(vendedorLastSync).toLocaleString('pt-BR')})
+                </span>
+              )}
+            </p>
           </div>
           <div className="flex gap-2">
+            <button
+              onClick={syncBaseLinker}
+              disabled={vendedorSyncing}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${vendedorSyncing ? 'bg-gray-200 text-gray-500' : 'bg-green-600 text-white hover:bg-green-700'}`}
+            >
+              <RefreshCw size={16} className={vendedorSyncing ? 'animate-spin' : ''} />
+              {vendedorSyncing ? 'Sincronizando...' : 'Sync BaseLinker'}
+            </button>
             <label className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold cursor-pointer transition-all ${vendedorUploading ? 'bg-gray-200 text-gray-500' : 'bg-[#6B1B8E] text-white hover:bg-[#4A1063]'}`}>
               <Download size={16} />
               {vendedorUploading ? 'Importando...' : 'Importar CSV/JSON'}
@@ -2376,8 +2526,10 @@ const App = () => {
     const [activeFilter, setActiveFilter] = useState('todos');
     const [respondingTo, setRespondingTo] = useState(null);
     const [viewingDetail, setViewingDetail] = useState(null);
+    const [dbReady, setDbReady] = useState(true);
+    const emptyItem = { sku: '', produto: '', quantidade: '', preco_unitario: '', peso_unitario: '' };
     const [formData, setFormData] = useState({
-      fornecedor: '', produto: '', quantidade: '', preco_unitario: '', peso_unitario: '',
+      fornecedor: '', items: [{ ...emptyItem }],
       prazo_entrega: '', observacoes: ''
     });
     const [responseData, setResponseData] = useState({ preco_resposta: '', prazo_resposta: '' });
@@ -2390,10 +2542,14 @@ const App = () => {
             .from('pedidos_fornecedor')
             .select('*')
             .order('created_at', { ascending: false });
-          if (data) setPedidos(data);
-          if (error) console.warn('Pedidos table not found, using local state:', error.message);
+          if (data) { setPedidos(data); setDbReady(true); }
+          if (error) {
+            console.warn('Pedidos table error:', error.message);
+            setDbReady(false);
+          }
         } catch (e) {
-          console.warn('Using local state for pedidos');
+          console.warn('DB connection error');
+          setDbReady(false);
         }
       };
       loadPedidos();
@@ -2404,16 +2560,44 @@ const App = () => {
       return `OC-2026-${num}`;
     };
 
+    // Multi-item helpers
+    const addItem = () => setFormData({ ...formData, items: [...formData.items, { ...emptyItem }] });
+    const removeItem = (idx) => setFormData({ ...formData, items: formData.items.filter((_, i) => i !== idx) });
+    const updateItem = (idx, field, value) => {
+      const newItems = [...formData.items];
+      newItems[idx] = { ...newItems[idx], [field]: value };
+      setFormData({ ...formData, items: newItems });
+    };
+
+    const calcTotals = (items) => {
+      let valor = 0, peso = 0, qtd = 0;
+      (items || []).forEach(item => {
+        const q = Number(item.quantidade) || 0;
+        valor += q * (Number(item.preco_unitario) || 0);
+        peso += q * (Number(item.peso_unitario) || 0);
+        qtd += q;
+      });
+      return { valor_total: valor, peso_total: peso, quantidade_total: qtd };
+    };
+
     const handleCreatePedido = async () => {
+      const totals = calcTotals(formData.items);
+      const produtoResumo = formData.items.map(i => i.sku ? `${i.sku} (${i.quantidade})` : `${i.produto} (${i.quantidade})`).join(', ');
       const newPedido = {
         numero_oc: generateOC(),
         fornecedor: formData.fornecedor,
-        produto: formData.produto,
-        quantidade: Number(formData.quantidade),
-        preco_unitario: Number(formData.preco_unitario),
-        peso_unitario: Number(formData.peso_unitario),
-        valor_total: Number(formData.quantidade) * Number(formData.preco_unitario),
-        peso_total: Number(formData.quantidade) * Number(formData.peso_unitario),
+        items: formData.items.map(i => ({
+          sku: i.sku,
+          produto: i.produto,
+          quantidade: Number(i.quantidade) || 0,
+          preco_unitario: Number(i.preco_unitario) || 0,
+          peso_unitario: Number(i.peso_unitario) || 0,
+          valor_total: (Number(i.quantidade) || 0) * (Number(i.preco_unitario) || 0),
+        })),
+        produto: produtoResumo,
+        quantidade: totals.quantidade_total,
+        valor_total: totals.valor_total,
+        peso_total: totals.peso_total,
         prazo_entrega: formData.prazo_entrega,
         observacoes: formData.observacoes,
         status: 'pendente',
@@ -2421,15 +2605,19 @@ const App = () => {
       };
       try {
         const { data, error } = await supabase.from('pedidos_fornecedor').insert([newPedido]).select();
-        if (data) setPedidos(prev => [data[0], ...prev]);
-        else if (error) {
-          console.warn('Insert error, saving locally:', error.message);
-          setPedidos(prev => [{ ...newPedido, id: Date.now() }, ...prev]);
+        if (data && data[0]) {
+          setPedidos(prev => [data[0], ...prev]);
+        } else if (error) {
+          console.error('Insert error:', error.message);
+          alert('Erro ao salvar: ' + error.message + '\n\nVerifique se a tabela pedidos_fornecedor existe no Supabase.');
+          return;
         }
-      } catch {
-        setPedidos(prev => [{ ...newPedido, id: Date.now() }, ...prev]);
+      } catch (e) {
+        console.error('DB error:', e);
+        alert('Erro de conexao com banco de dados.');
+        return;
       }
-      setFormData({ fornecedor: '', produto: '', quantidade: '', preco_unitario: '', peso_unitario: '', prazo_entrega: '', observacoes: '' });
+      setFormData({ fornecedor: '', items: [{ ...emptyItem }], prazo_entrega: '', observacoes: '' });
       setShowForm(false);
     };
 
@@ -2493,6 +2681,18 @@ const App = () => {
           </button>
         </div>
 
+        {/* DB Warning */}
+        {!dbReady && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+            <AlertCircle className="text-red-500 mt-0.5 flex-shrink-0" size={20} />
+            <div>
+              <p className="font-medium text-red-800">Tabela nao encontrada no Supabase</p>
+              <p className="text-red-600 text-sm mt-1">A tabela <code className="bg-red-100 px-1 rounded">pedidos_fornecedor</code> precisa ser criada. Acesse o Supabase SQL Editor e execute o SQL de criacao.</p>
+              <button onClick={() => window.open('/api/debug/create-pedidos-table', '_blank')} className="mt-2 text-xs px-3 py-1.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-medium">Ver SQL de Criacao</button>
+            </div>
+          </div>
+        )}
+
         {/* KPI Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {[
@@ -2530,8 +2730,8 @@ const App = () => {
                 <tr className="text-left text-xs text-gray-500 uppercase border-b" style={{ backgroundColor: '#F9FAFB' }}>
                   <th className="px-4 py-3">Numero OC</th>
                   <th className="px-4 py-3">Fornecedor</th>
-                  <th className="px-4 py-3">Produto</th>
-                  <th className="px-4 py-3">Qtd</th>
+                  <th className="px-4 py-3">Produtos</th>
+                  <th className="px-4 py-3">Itens</th>
                   <th className="px-4 py-3">Valor Total</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Data</th>
@@ -2545,8 +2745,8 @@ const App = () => {
                   <tr key={p.id} className="border-b hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 font-medium text-gray-800">{p.numero_oc}</td>
                     <td className="px-4 py-3 text-gray-600">{p.fornecedor}</td>
-                    <td className="px-4 py-3 text-gray-600">{p.produto}</td>
-                    <td className="px-4 py-3 text-gray-600">{p.quantidade}</td>
+                    <td className="px-4 py-3 text-gray-600 max-w-[200px] truncate" title={p.produto}>{p.items?.length ? p.items.map(i => i.sku || i.produto).join(', ') : p.produto}</td>
+                    <td className="px-4 py-3 text-gray-600">{p.items?.length || 1} ({p.quantidade || p.items?.reduce((s, i) => s + (Number(i.quantidade) || 0), 0) || 0} un)</td>
                     <td className="px-4 py-3 text-gray-800 font-medium">R$ {(p.valor_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusConfig[p.status]?.color || 'bg-gray-100 text-gray-600'}`}>
@@ -2585,45 +2785,82 @@ const App = () => {
               </div>
               <div className="p-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Fornecedor</label>
-                  <input type="text" value={formData.fornecedor} onChange={e => setFormData({ ...formData, fornecedor: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2" style={{ '--tw-ring-color': COLORS.purple }} placeholder="Nome do fornecedor" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fornecedor *</label>
+                  <input type="text" value={formData.fornecedor} onChange={e => setFormData({ ...formData, fornecedor: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" placeholder="Nome do fornecedor" />
                 </div>
+
+                {/* Items (Multi-SKU) */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Produto</label>
-                  <input type="text" value={formData.produto} onChange={e => setFormData({ ...formData, produto: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2" placeholder="Nome do produto" />
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-700">Itens do Pedido *</label>
+                    <button onClick={addItem} className="flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-lg text-white" style={{ backgroundColor: COLORS.purple }}>
+                      <Plus size={12} /> Adicionar Item
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    {formData.items.map((item, idx) => (
+                      <div key={idx} className="bg-gray-50 rounded-xl p-3 relative">
+                        {formData.items.length > 1 && (
+                          <button onClick={() => removeItem(idx)} className="absolute top-2 right-2 p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 size={14} /></button>
+                        )}
+                        <div className="grid grid-cols-2 gap-2 mb-2">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-0.5">SKU</label>
+                            <input type="text" value={item.sku} onChange={e => updateItem(idx, 'sku', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="Ex: SNF-001" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-0.5">Produto *</label>
+                            <input type="text" value={item.produto} onChange={e => updateItem(idx, 'produto', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="Nome do produto" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-0.5">Qtd *</label>
+                            <input type="number" value={item.quantidade} onChange={e => updateItem(idx, 'quantidade', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="0" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-0.5">Preco Unit. (R$)</label>
+                            <input type="number" step="0.01" value={item.preco_unitario} onChange={e => updateItem(idx, 'preco_unitario', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="0.00" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-0.5">Peso Unit. (kg)</label>
+                            <input type="number" step="0.01" value={item.peso_unitario} onChange={e => updateItem(idx, 'peso_unitario', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="0.00" />
+                          </div>
+                        </div>
+                        {item.quantidade && item.preco_unitario && (
+                          <p className="text-xs text-right mt-1 font-medium" style={{ color: COLORS.purple }}>
+                            Subtotal: R$ {(Number(item.quantidade) * Number(item.preco_unitario)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Quantidade</label>
-                    <input type="number" value={formData.quantidade} onChange={e => setFormData({ ...formData, quantidade: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2" placeholder="0" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Preco Unit. (R$)</label>
-                    <input type="number" step="0.01" value={formData.preco_unitario} onChange={e => setFormData({ ...formData, preco_unitario: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2" placeholder="0.00" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Peso Unit. (kg)</label>
-                    <input type="number" step="0.01" value={formData.peso_unitario} onChange={e => setFormData({ ...formData, peso_unitario: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2" placeholder="0.00" />
-                  </div>
-                </div>
-                {formData.quantidade && formData.preco_unitario && (
-                  <div className="bg-purple-50 rounded-xl p-3 grid grid-cols-2 gap-2 text-sm">
-                    <div><span className="text-gray-500">Volume Total:</span> <span className="font-bold" style={{ color: COLORS.purple }}>R$ {(Number(formData.quantidade) * Number(formData.preco_unitario)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
-                    <div><span className="text-gray-500">Peso Total:</span> <span className="font-bold" style={{ color: COLORS.purple }}>{(Number(formData.quantidade) * Number(formData.peso_unitario || 0)).toFixed(2)} kg</span></div>
-                  </div>
-                )}
+
+                {/* Totals */}
+                {(() => {
+                  const t = calcTotals(formData.items);
+                  return t.valor_total > 0 ? (
+                    <div className="bg-purple-50 rounded-xl p-3 grid grid-cols-3 gap-2 text-sm">
+                      <div><span className="text-gray-500">Itens:</span> <span className="font-bold" style={{ color: COLORS.purple }}>{formData.items.length}</span></div>
+                      <div><span className="text-gray-500">Total:</span> <span className="font-bold" style={{ color: COLORS.purple }}>R$ {t.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
+                      <div><span className="text-gray-500">Peso:</span> <span className="font-bold" style={{ color: COLORS.purple }}>{t.peso_total.toFixed(2)} kg</span></div>
+                    </div>
+                  ) : null;
+                })()}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Prazo de Entrega</label>
-                  <input type="date" value={formData.prazo_entrega} onChange={e => setFormData({ ...formData, prazo_entrega: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2" />
+                  <input type="date" value={formData.prazo_entrega} onChange={e => setFormData({ ...formData, prazo_entrega: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Observacoes</label>
-                  <textarea value={formData.observacoes} onChange={e => setFormData({ ...formData, observacoes: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2" rows={3} placeholder="Observacoes adicionais..." />
+                  <textarea value={formData.observacoes} onChange={e => setFormData({ ...formData, observacoes: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" rows={2} placeholder="Observacoes adicionais..." />
                 </div>
               </div>
               <div className="flex justify-end gap-3 p-6 border-t">
                 <button onClick={() => setShowForm(false)} className="px-4 py-2 text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200">Cancelar</button>
-                <button onClick={handleCreatePedido} disabled={!formData.fornecedor || !formData.produto || !formData.quantidade} className="px-4 py-2 text-white rounded-xl disabled:opacity-50" style={{ backgroundColor: COLORS.purple }}>Criar Ordem</button>
+                <button onClick={handleCreatePedido} disabled={!formData.fornecedor || !formData.items[0]?.produto || !formData.items[0]?.quantidade} className="px-4 py-2 text-white rounded-xl disabled:opacity-50" style={{ backgroundColor: COLORS.purple }}>Criar Ordem</button>
               </div>
             </div>
           </div>
@@ -2638,9 +2875,14 @@ const App = () => {
                 <button onClick={() => setRespondingTo(null)} className="p-1 rounded-lg hover:bg-gray-100"><X size={20} /></button>
               </div>
               <div className="p-6 space-y-4">
-                <div className="bg-gray-50 rounded-xl p-3 text-sm">
+                <div className="bg-gray-50 rounded-xl p-3 text-sm space-y-1">
                   <p><span className="text-gray-500">Fornecedor:</span> {respondingTo.fornecedor}</p>
-                  <p><span className="text-gray-500">Produto:</span> {respondingTo.produto} x {respondingTo.quantidade}</p>
+                  {respondingTo.items?.length > 0 ? respondingTo.items.map((item, idx) => (
+                    <p key={idx}><span className="text-gray-500">{item.sku || `Item ${idx+1}`}:</span> {item.produto} x {item.quantidade}</p>
+                  )) : (
+                    <p><span className="text-gray-500">Produto:</span> {respondingTo.produto} x {respondingTo.quantidade}</p>
+                  )}
+                  <p className="font-medium pt-1" style={{ color: COLORS.purple }}>Total: R$ {(respondingTo.valor_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Preco Ofertado (R$)</label>
@@ -2670,14 +2912,46 @@ const App = () => {
               <div className="p-6 space-y-3 text-sm">
                 <div className="grid grid-cols-2 gap-3">
                   <div><span className="text-gray-500">Fornecedor:</span><p className="font-medium">{viewingDetail.fornecedor}</p></div>
-                  <div><span className="text-gray-500">Produto:</span><p className="font-medium">{viewingDetail.produto}</p></div>
-                  <div><span className="text-gray-500">Quantidade:</span><p className="font-medium">{viewingDetail.quantidade}</p></div>
-                  <div><span className="text-gray-500">Preco Unitario:</span><p className="font-medium">R$ {(viewingDetail.preco_unitario || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p></div>
-                  <div><span className="text-gray-500">Valor Total:</span><p className="font-medium font-bold" style={{ color: COLORS.purple }}>R$ {(viewingDetail.valor_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p></div>
-                  <div><span className="text-gray-500">Peso Total:</span><p className="font-medium">{(viewingDetail.peso_total || 0).toFixed(2)} kg</p></div>
                   <div><span className="text-gray-500">Status:</span><p><span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusConfig[viewingDetail.status]?.color}`}>{statusConfig[viewingDetail.status]?.icon} {viewingDetail.status?.charAt(0).toUpperCase() + viewingDetail.status?.slice(1)}</span></p></div>
                   <div><span className="text-gray-500">Prazo Entrega:</span><p className="font-medium">{viewingDetail.prazo_entrega || '-'}</p></div>
+                  <div><span className="text-gray-500">Criado em:</span><p className="font-medium">{viewingDetail.created_at ? new Date(viewingDetail.created_at).toLocaleDateString('pt-BR') : '-'}</p></div>
                 </div>
+
+                {/* Items Table */}
+                {viewingDetail.items?.length > 0 ? (
+                  <div className="mt-2">
+                    <p className="text-gray-500 mb-2 font-medium">Itens do Pedido ({viewingDetail.items.length})</p>
+                    <div className="border rounded-xl overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead><tr className="bg-gray-50 text-gray-500 text-left">
+                          <th className="px-3 py-2">SKU</th><th className="px-3 py-2">Produto</th><th className="px-3 py-2 text-right">Qtd</th><th className="px-3 py-2 text-right">Preco Un.</th><th className="px-3 py-2 text-right">Subtotal</th>
+                        </tr></thead>
+                        <tbody>{viewingDetail.items.map((item, idx) => (
+                          <tr key={idx} className="border-t">
+                            <td className="px-3 py-2 text-gray-600">{item.sku || '-'}</td>
+                            <td className="px-3 py-2 font-medium">{item.produto}</td>
+                            <td className="px-3 py-2 text-right">{item.quantidade}</td>
+                            <td className="px-3 py-2 text-right">R$ {(Number(item.preco_unitario) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                            <td className="px-3 py-2 text-right font-medium">R$ {((Number(item.quantidade) || 0) * (Number(item.preco_unitario) || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><span className="text-gray-500">Produto:</span><p className="font-medium">{viewingDetail.produto}</p></div>
+                    <div><span className="text-gray-500">Quantidade:</span><p className="font-medium">{viewingDetail.quantidade}</p></div>
+                  </div>
+                )}
+
+                {/* Totals */}
+                <div className="bg-purple-50 rounded-xl p-3 grid grid-cols-3 gap-2">
+                  <div><span className="text-gray-500">Qtd Total:</span><p className="font-bold" style={{ color: COLORS.purple }}>{viewingDetail.quantidade || viewingDetail.items?.reduce((s, i) => s + (Number(i.quantidade) || 0), 0) || 0}</p></div>
+                  <div><span className="text-gray-500">Valor Total:</span><p className="font-bold" style={{ color: COLORS.purple }}>R$ {(viewingDetail.valor_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p></div>
+                  <div><span className="text-gray-500">Peso Total:</span><p className="font-bold" style={{ color: COLORS.purple }}>{(viewingDetail.peso_total || 0).toFixed(2)} kg</p></div>
+                </div>
+
                 {viewingDetail.preco_resposta && (
                   <div className="bg-blue-50 rounded-xl p-3 mt-2">
                     <p className="font-medium text-blue-800 mb-1">Resposta do Representante</p>
@@ -2917,39 +3191,68 @@ const App = () => {
   // 7. Precificacao Calculator
   const PrecificacaoView = () => {
     const [custo, setCusto] = useState('');
-    const [imposto, setImposto] = useState(11);
-    const [comissaoML, setComissaoML] = useState(11.5);
-    const [freteBaixo, setFreteBaixo] = useState(6.50);
-    const [freteAlto, setFreteAlto] = useState(20.00);
-    const [limiarFrete, setLimiarFrete] = useState(79);
+    const [activeMarketplace, setActiveMarketplace] = useState('mercadolivre');
+
+    // Default marketplace configurations
+    const defaultConfigs = {
+      mercadolivre: { nome: 'Mercado Livre', cor: '#FFE600', imposto: 11, comissao: 11.5, freteBaixo: 6.50, freteAlto: 20.00, limiarFrete: 79 },
+      shopee: { nome: 'Shopee', cor: '#EE4D2D', imposto: 11, comissao: 14, freteBaixo: 5.00, freteAlto: 15.00, limiarFrete: 49 },
+      amazon: { nome: 'Amazon', cor: '#FF9900', imposto: 11, comissao: 15, freteBaixo: 8.00, freteAlto: 22.00, limiarFrete: 99 },
+      tiktok: { nome: 'TikTok Shop', cor: '#000000', imposto: 11, comissao: 8, freteBaixo: 5.00, freteAlto: 12.00, limiarFrete: 59 },
+      temu: { nome: 'Temu', cor: '#F54B24', imposto: 11, comissao: 12, freteBaixo: 0, freteAlto: 0, limiarFrete: 0 },
+    };
+
+    // Load from localStorage or use defaults
+    const [marketplaceConfigs, setMarketplaceConfigs] = useState(() => {
+      const saved = localStorage.getItem('portal-sniff-marketplace-configs');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          return defaultConfigs;
+        }
+      }
+      return defaultConfigs;
+    });
+
+    // Save to localStorage whenever configs change
+    useEffect(() => {
+      localStorage.setItem('portal-sniff-marketplace-configs', JSON.stringify(marketplaceConfigs));
+    }, [marketplaceConfigs]);
+
+    const config = marketplaceConfigs[activeMarketplace];
+
+    const updateConfig = (field, value) => {
+      setMarketplaceConfigs(prev => ({
+        ...prev,
+        [activeMarketplace]: { ...prev[activeMarketplace], [field]: Number(value) }
+      }));
+    };
 
     const calcPreco = (mcAlvo) => {
       if (!custo || Number(custo) <= 0) return null;
       const c = Number(custo);
-      // Formula: PV = (C + Frete) / (1 - Imposto% - Comissao% - MC%)
-      // Try with frete baixo first
-      const divisor = 1 - (imposto / 100) - (comissaoML / 100) - (mcAlvo / 100);
+      const divisor = 1 - (config.imposto / 100) - (config.comissao / 100) - (mcAlvo / 100);
       if (divisor <= 0) return null;
 
-      let pvBaixo = (c + freteBaixo) / divisor;
-      let pvAlto = (c + freteAlto) / divisor;
+      let pvBaixo = (c + config.freteBaixo) / divisor;
+      let pvAlto = (c + config.freteAlto) / divisor;
 
-      // If price with low freight exceeds threshold, use high freight
       let pv, freteUsado;
-      if (pvBaixo >= limiarFrete) {
+      if (config.limiarFrete === 0 || pvBaixo >= config.limiarFrete) {
         pv = pvAlto;
-        freteUsado = freteAlto;
+        freteUsado = config.freteAlto;
       } else {
         pv = pvBaixo;
-        freteUsado = freteBaixo;
+        freteUsado = config.freteBaixo;
       }
 
-      const impostoVal = pv * (imposto / 100);
-      const comissaoVal = pv * (comissaoML / 100);
+      const impostoVal = pv * (config.imposto / 100);
+      const comissaoVal = pv * (config.comissao / 100);
       const mc = pv - impostoVal - comissaoVal - freteUsado - c;
       const mcPct = (mc / pv) * 100;
 
-      return { pv: pv, frete: freteUsado, impostoVal, comissaoVal, mc, mcPct };
+      return { pv, frete: freteUsado, impostoVal, comissaoVal, mc, mcPct };
     };
 
     const faixas = [
@@ -2976,16 +3279,35 @@ const App = () => {
 
     return (
       <div className="space-y-6">
-        {/* Header */}
+        {/* Header with Marketplace Tabs */}
         <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
           <h2 className="text-xl font-black text-[#6B1B8E] mb-1">Calculadora de Precificacao</h2>
-          <p className="text-sm text-gray-500">Mercado Livre - Simples Nacional</p>
+          <p className="text-sm text-gray-500 mb-4">Simples Nacional - Selecione o marketplace</p>
+
+          {/* Marketplace Tabs */}
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(marketplaceConfigs).map(([key, mp]) => (
+              <button
+                key={key}
+                onClick={() => setActiveMarketplace(key)}
+                className={`px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${
+                  activeMarketplace === key
+                    ? 'text-white shadow-lg scale-105'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+                style={activeMarketplace === key ? { backgroundColor: mp.cor } : {}}
+              >
+                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: mp.cor }}></span>
+                {mp.nome}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Inputs */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Custo do Produto - destaque */}
-          <div className="bg-gradient-to-br from-[#6B1B8E] to-[#4A1063] p-6 rounded-2xl shadow-sm text-white">
+          <div className="p-6 rounded-2xl shadow-sm text-white" style={{ background: `linear-gradient(135deg, ${config.cor}dd, ${config.cor}99)` }}>
             <label className="block text-xs uppercase font-bold tracking-wider opacity-80 mb-2">Custo do Produto (R$)</label>
             <input
               type="number"
@@ -2994,35 +3316,39 @@ const App = () => {
               value={custo}
               onChange={e => setCusto(e.target.value)}
               placeholder="Ex: 20.00"
-              className="w-full px-4 py-3 rounded-xl text-2xl font-black text-[#6B1B8E] bg-white outline-none focus:ring-2 focus:ring-[#F4B942]"
+              className="w-full px-4 py-3 rounded-xl text-2xl font-black text-gray-800 bg-white outline-none focus:ring-2 focus:ring-white/50"
             />
-            <p className="text-xs mt-2 opacity-70">Insira o custo e veja os 3 precos calculados automaticamente</p>
+            <p className="text-xs mt-2 opacity-80">Calculando para: <strong>{config.nome}</strong></p>
           </div>
 
-          {/* Parametros editaveis */}
+          {/* Parametros editaveis do Marketplace */}
           <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-            <h3 className="font-bold text-gray-800 mb-4">Parametros (editaveis)</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-gray-800">Parametros {config.nome}</h3>
+              <span className="w-4 h-4 rounded-full" style={{ backgroundColor: config.cor }}></span>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Imposto %</label>
-                <input type="number" step="0.1" value={imposto} onChange={e => setImposto(Number(e.target.value))} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-200 focus:border-[#6B1B8E] outline-none" />
+                <input type="number" step="0.1" value={config.imposto} onChange={e => updateConfig('imposto', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Comissao ML %</label>
-                <input type="number" step="0.1" value={comissaoML} onChange={e => setComissaoML(Number(e.target.value))} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-200 focus:border-[#6B1B8E] outline-none" />
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Comissao %</label>
+                <input type="number" step="0.1" value={config.comissao} onChange={e => updateConfig('comissao', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Frete {'<'} R${limiarFrete}</label>
-                <input type="number" step="0.01" value={freteBaixo} onChange={e => setFreteBaixo(Number(e.target.value))} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-200 focus:border-[#6B1B8E] outline-none" />
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Frete Baixo (R$)</label>
+                <input type="number" step="0.01" value={config.freteBaixo} onChange={e => updateConfig('freteBaixo', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Frete {'>='} R${limiarFrete}</label>
-                <input type="number" step="0.01" value={freteAlto} onChange={e => setFreteAlto(Number(e.target.value))} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-200 focus:border-[#6B1B8E] outline-none" />
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Frete Alto (R$)</label>
+                <input type="number" step="0.01" value={config.freteAlto} onChange={e => updateConfig('freteAlto', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
               </div>
             </div>
             <div className="mt-3">
               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Limiar Frete Gratis (R$)</label>
-              <input type="number" step="1" value={limiarFrete} onChange={e => setLimiarFrete(Number(e.target.value))} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-200 focus:border-[#6B1B8E] outline-none" />
+              <input type="number" step="1" value={config.limiarFrete} onChange={e => updateConfig('limiarFrete', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
+              <p className="text-[10px] text-gray-400 mt-1">0 = sem frete gratis (usa sempre frete alto)</p>
             </div>
           </div>
         </div>
@@ -3075,15 +3401,15 @@ const App = () => {
                         <span className="font-bold">{fmt(Number(custo))}</span>
                       </div>
                       <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">Imposto ({imposto}%)</span>
+                        <span className="text-gray-500">Imposto ({config.imposto}%)</span>
                         <span className="font-bold text-red-500">- {fmt(r.mid.impostoVal)}</span>
                       </div>
                       <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">Comissao ({comissaoML}%)</span>
+                        <span className="text-gray-500">Comissao ({config.comissao}%)</span>
                         <span className="font-bold text-red-500">- {fmt(r.mid.comissaoVal)}</span>
                       </div>
                       <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">Frete {r.mid.pv >= limiarFrete ? `(>= R$${limiarFrete})` : `(< R$${limiarFrete})`}</span>
+                        <span className="text-gray-500">Frete</span>
                         <span className="font-bold text-red-500">- {fmt(r.mid.frete)}</span>
                       </div>
                       <div className="h-px bg-gray-200 my-1"></div>
@@ -3126,6 +3452,543 @@ const App = () => {
     );
   };
 
+  // ============== ANALYTICS VIEW ==============
+  const AnalyticsView = () => {
+    const [loading, setLoading] = useState(false);
+    const [syncing, setSyncing] = useState(false);
+    const [data, setData] = useState(null);
+    const [error, setError] = useState(null);
+    const [hasSearched, setHasSearched] = useState(false);
+    const [useCache, setUseCache] = useState(true); // Default: usar cache
+    const [cacheStatus, setCacheStatus] = useState(null);
+
+    // Period selector
+    const [selectedPeriod, setSelectedPeriod] = useState('7d');
+    const [customDateFrom, setCustomDateFrom] = useState('');
+    const [customDateTo, setCustomDateTo] = useState('');
+    const [filterMarketplace, setFilterMarketplace] = useState('');
+    const [filterCompany, setFilterCompany] = useState('');
+
+    const periods = [
+      { id: 'today', label: 'Hoje', days: 0 },
+      { id: '7d', label: 'Ultimos 7 dias', days: 7 },
+      { id: '15d', label: 'Ultimos 15 dias', days: 15 },
+      { id: '30d', label: 'Ultimos 30 dias', days: 30 },
+      { id: '60d', label: 'Ultimos 60 dias', days: 60 },
+      { id: '90d', label: 'Ultimos 90 dias', days: 90 },
+      { id: 'month', label: 'Este mes', days: -1 },
+      { id: 'lastmonth', label: 'Mes passado', days: -2 },
+      { id: 'custom', label: 'Personalizado', days: -99 },
+    ];
+
+    const marketplaces = [
+      { id: '', label: 'Todos' },
+      { id: 'mercadolivre', label: 'Mercado Livre', color: '#FFE600' },
+      { id: 'shopee', label: 'Shopee', color: '#EE4D2D' },
+      { id: 'amazon', label: 'Amazon', color: '#FF9900' },
+      { id: 'tiktok', label: 'TikTok Shop', color: '#000000' },
+      { id: 'temu', label: 'Temu', color: '#F54B24' },
+      { id: 'shein', label: 'Shein', color: '#000000' },
+    ];
+
+    const companies = [
+      { id: '', label: 'Todas' },
+      { id: 'casa_ipiranga', label: 'Casa Ipiranga' },
+      { id: 'romobr', label: 'ROMOBR' },
+      { id: 'sniffhome', label: 'Sniff Home' },
+      { id: 'inovate', label: 'Inovate' },
+      { id: 'agua_marinha', label: 'Agua Marinha' },
+    ];
+
+    const getDateRange = () => {
+      const now = new Date();
+      let from, to;
+
+      if (selectedPeriod === 'custom') {
+        from = customDateFrom ? new Date(customDateFrom) : new Date();
+        to = customDateTo ? new Date(customDateTo + 'T23:59:59') : new Date();
+      } else if (selectedPeriod === 'today') {
+        from = new Date(now.setHours(0, 0, 0, 0));
+        to = new Date();
+      } else if (selectedPeriod === 'month') {
+        from = new Date(now.getFullYear(), now.getMonth(), 1);
+        to = new Date();
+      } else if (selectedPeriod === 'lastmonth') {
+        from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        to = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+      } else {
+        const period = periods.find(p => p.id === selectedPeriod);
+        const days = period?.days || 7;
+        from = new Date();
+        from.setDate(from.getDate() - days);
+        to = new Date();
+      }
+
+      return { from, to };
+    };
+
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      setHasSearched(true);
+      try {
+        const { from, to } = getDateRange();
+        const fromTs = Math.floor(from.getTime() / 1000);
+        const toTs = Math.floor(to.getTime() / 1000);
+
+        // Escolher endpoint baseado na preferencia de cache
+        const endpoint = useCache ? '/api/baselinker/cached-analytics' : '/api/baselinker/analytics';
+        let url = `${endpoint}?date_from=${fromTs}&date_to=${toTs}`;
+        if (filterMarketplace) url += `&marketplace=${filterMarketplace}`;
+        if (filterCompany) url += `&company=${filterCompany}`;
+
+        const response = await fetch(url);
+        const result = await response.json();
+
+        if (!result.success) throw new Error(result.error);
+        setData(result);
+
+        // Atualizar status do cache se veio do cache
+        if (result.fromCache) {
+          setCacheStatus({
+            ageMinutes: result.cacheAgeMinutes,
+            warning: result.warning
+          });
+        } else {
+          setCacheStatus(null);
+        }
+      } catch (err) {
+        setError(err.message);
+      }
+      setLoading(false);
+    };
+
+    // Funcao de sync - atualiza cache do BaseLinker
+    const syncData = async (mode = 'incremental') => {
+      setSyncing(true);
+      setError(null);
+      try {
+        const response = await fetch(`/api/baselinker/sync?mode=${mode}&days=30`, { method: 'POST' });
+        const result = await response.json();
+
+        if (!result.success) throw new Error(result.error || result.details);
+
+        // Mostrar sucesso e recarregar dados
+        alert(`Sync ${result.syncType} completo! ${result.ordersSaved} pedidos sincronizados.`);
+
+        // Recarregar dados do cache
+        if (hasSearched) {
+          await fetchData();
+        }
+      } catch (err) {
+        setError('Sync falhou: ' + err.message);
+      }
+      setSyncing(false);
+    };
+
+    // NO auto-fetch on mount - user must click button
+
+    const fmt = (v) => `R$ ${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    const fmtNum = (v) => Number(v || 0).toLocaleString('pt-BR');
+
+    const mpColors = {
+      mercadolivre: '#FFE600',
+      shopee: '#EE4D2D',
+      amazon: '#FF9900',
+      tiktok: '#000000',
+      temu: '#F54B24',
+      shein: '#333333',
+      magalu: '#0086FF',
+      outros: '#999999'
+    };
+
+    const companyColors = {
+      casa_ipiranga: '#6B1B8E',
+      romobr: '#2563EB',
+      sniffhome: '#059669',
+      inovate: '#DC2626',
+      agua_marinha: '#0891B2',
+      outros: '#6B7280'
+    };
+
+    return (
+      <div className="space-y-6 animate-fadeIn">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <BarChart3 className="text-[#6B1B8E]" /> Analytics Multi-Empresa
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">Faturamento real por empresa e marketplace</p>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            {/* Period Selector */}
+            <div className="md:col-span-2 lg:col-span-1">
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Periodo de Analise</label>
+              <select
+                value={selectedPeriod}
+                onChange={e => setSelectedPeriod(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-purple-200 outline-none bg-gray-50"
+              >
+                {periods.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </select>
+            </div>
+
+            {/* Custom Date Range - only show when custom is selected */}
+            {selectedPeriod === 'custom' && (
+              <div className="md:col-span-2 lg:col-span-1 flex gap-2">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-2">De</label>
+                  <input
+                    type="date"
+                    value={customDateFrom}
+                    onChange={e => setCustomDateFrom(e.target.value)}
+                    className="w-full px-3 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-200 outline-none"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Ate</label>
+                  <input
+                    type="date"
+                    value={customDateTo}
+                    onChange={e => setCustomDateTo(e.target.value)}
+                    className="w-full px-3 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-200 outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Marketplace Filter */}
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Marketplace</label>
+              <select
+                value={filterMarketplace}
+                onChange={e => setFilterMarketplace(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-purple-200 outline-none bg-gray-50"
+              >
+                {marketplaces.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select>
+            </div>
+
+            {/* Company Filter */}
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Empresa</label>
+              <select
+                value={filterCompany}
+                onChange={e => setFilterCompany(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-purple-200 outline-none bg-gray-50"
+              >
+                {companies.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Cache Toggle + Sync Button */}
+          <div className="flex items-center justify-between mb-4 p-3 bg-gray-50 rounded-xl">
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={useCache}
+                  onChange={e => setUseCache(e.target.checked)}
+                  className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                />
+                <span className="text-sm font-medium text-gray-700">Usar Cache Local</span>
+              </label>
+              {useCache && (
+                <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full">
+                  Zero requisicoes API
+                </span>
+              )}
+              {!useCache && (
+                <span className="text-xs px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full">
+                  Direto do BaseLinker
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => syncData('incremental')}
+              disabled={syncing}
+              className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all ${
+                syncing ? 'bg-gray-200 text-gray-500' : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
+              {syncing ? 'Sincronizando...' : 'Sync Cache'}
+            </button>
+          </div>
+
+          {/* Cache Status */}
+          {cacheStatus && (
+            <div className={`mb-4 p-3 rounded-xl text-sm flex items-center gap-2 ${
+              cacheStatus.warning ? 'bg-yellow-50 border border-yellow-200 text-yellow-700' : 'bg-green-50 border border-green-200 text-green-700'
+            }`}>
+              <Clock size={16} />
+              <span>Cache atualizado ha {cacheStatus.ageMinutes} minutos</span>
+              {cacheStatus.warning && (
+                <button
+                  onClick={() => syncData('incremental')}
+                  className="ml-auto text-xs px-2 py-1 bg-yellow-200 hover:bg-yellow-300 rounded transition-colors"
+                >
+                  Atualizar agora
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Search Button - prominent */}
+          <button
+            onClick={fetchData}
+            disabled={loading || (selectedPeriod === 'custom' && (!customDateFrom || !customDateTo))}
+            className={`w-full px-6 py-4 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-3 ${
+              loading ? 'bg-gray-200 text-gray-500' : 'bg-gradient-to-r from-[#6B1B8E] to-[#4A1063] text-white hover:shadow-lg hover:scale-[1.02]'
+            }`}
+          >
+            {loading ? (
+              <>
+                <RefreshCw size={20} className="animate-spin" />
+                {useCache ? 'Carregando do cache...' : 'Carregando do BaseLinker...'}
+              </>
+            ) : (
+              <>
+                <Search size={20} />
+                Buscar Analytics
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Empty State - before first search */}
+        {!hasSearched && !loading && (
+          <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl p-12 text-center">
+            <BarChart3 size={48} className="mx-auto text-gray-300 mb-4" />
+            <h3 className="text-lg font-bold text-gray-600 mb-2">Selecione os filtros e clique em Buscar</h3>
+            <p className="text-sm text-gray-400">Escolha o periodo, marketplace e empresa para visualizar os dados de faturamento.</p>
+          </div>
+        )}
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
+            <strong>Erro:</strong> {error}
+          </div>
+        )}
+
+        {data && (
+          <>
+            {/* KPI Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                <p className="text-xs font-bold text-gray-400 uppercase">Faturamento</p>
+                <p className="text-2xl font-black text-[#6B1B8E] mt-1">{fmt(data.summary.totalRevenue)}</p>
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                <p className="text-xs font-bold text-gray-400 uppercase">Pedidos</p>
+                <p className="text-2xl font-black text-gray-800 mt-1">{fmtNum(data.summary.totalOrders)}</p>
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                <p className="text-xs font-bold text-gray-400 uppercase">Ticket Medio</p>
+                <p className="text-2xl font-black text-green-600 mt-1">{fmt(data.summary.avgTicket)}</p>
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                <p className="text-xs font-bold text-gray-400 uppercase">Unidades</p>
+                <p className="text-2xl font-black text-gray-800 mt-1">{fmtNum(data.summary.totalUnits)}</p>
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                <p className="text-xs font-bold text-gray-400 uppercase">% Full</p>
+                <p className="text-2xl font-black text-blue-600 mt-1">{data.summary.fullPercentage}%</p>
+              </div>
+            </div>
+
+            {/* Alert about Original Value correction */}
+            {data.summary.ordersWithOriginalValueCorrection > 0 && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-yellow-800 text-sm flex items-center gap-2">
+                <AlertCircle size={18} />
+                <span><strong>{data.summary.ordersWithOriginalValueCorrection}</strong> pedidos corrigidos com "Valor Original" (Shopee/TEMU/TikTok)</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* By Marketplace */}
+              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <Target size={18} className="text-[#6B1B8E]" /> Por Marketplace
+                </h3>
+                <div className="space-y-3">
+                  {Object.entries(data.byMarketplace).sort((a, b) => b[1].revenue - a[1].revenue).map(([mp, stats]) => (
+                    <div key={mp} className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: mpColors[mp] || '#999' }}></div>
+                      <div className="flex-1">
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-sm capitalize">{mp}</span>
+                          <span className="font-black text-[#6B1B8E]">{fmt(stats.revenue)}</span>
+                        </div>
+                        <div className="flex justify-between text-xs text-gray-500">
+                          <span>{stats.orders} pedidos</span>
+                          <span>TM: {fmt(stats.orders > 0 ? stats.revenue / stats.orders : 0)}</span>
+                        </div>
+                        <div className="mt-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{
+                              width: `${(stats.revenue / parseFloat(data.summary.totalRevenue)) * 100}%`,
+                              backgroundColor: mpColors[mp] || '#999'
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* By Company */}
+              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <Users size={18} className="text-[#6B1B8E]" /> Por Empresa
+                </h3>
+                <div className="space-y-3">
+                  {Object.entries(data.byCompany).sort((a, b) => b[1].revenue - a[1].revenue).map(([comp, stats]) => (
+                    <div key={comp} className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: companyColors[comp] || '#999' }}></div>
+                      <div className="flex-1">
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-sm capitalize">{comp.replace('_', ' ')}</span>
+                          <span className="font-black text-[#6B1B8E]">{fmt(stats.revenue)}</span>
+                        </div>
+                        <div className="flex justify-between text-xs text-gray-500">
+                          <span>{stats.orders} pedidos</span>
+                          <span>TM: {fmt(stats.orders > 0 ? stats.revenue / stats.orders : 0)}</span>
+                        </div>
+                        <div className="mt-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{
+                              width: `${(stats.revenue / parseFloat(data.summary.totalRevenue)) * 100}%`,
+                              backgroundColor: companyColors[comp] || '#999'
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Matrix: Company x Marketplace */}
+            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm overflow-x-auto">
+              <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <BarChart3 size={18} className="text-[#6B1B8E]" /> Matriz Empresa x Marketplace
+              </h3>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="text-left p-2 text-xs font-bold text-gray-500">Empresa / Marketplace</th>
+                    {Object.keys(mpColors).map(mp => (
+                      <th key={mp} className="text-center p-2">
+                        <span className="inline-block px-2 py-1 rounded-lg text-xs font-bold text-white capitalize" style={{ backgroundColor: mpColors[mp] }}>
+                          {mp === 'mercadolivre' ? 'ML' : mp}
+                        </span>
+                      </th>
+                    ))}
+                    <th className="text-right p-2 text-xs font-bold text-gray-500">TOTAL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(data.byCompany).sort((a, b) => b[1].revenue - a[1].revenue).map(([comp, compStats]) => (
+                    <tr key={comp} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="p-2 font-bold capitalize" style={{ color: companyColors[comp] }}>{comp.replace('_', ' ')}</td>
+                      {Object.keys(mpColors).map(mp => {
+                        const cellData = data.matrix.find(m => m.company === comp && m.marketplace === mp);
+                        return (
+                          <td key={mp} className="text-center p-2">
+                            {cellData ? (
+                              <div>
+                                <p className="font-bold text-gray-800">{fmt(cellData.revenue)}</p>
+                                <p className="text-[10px] text-gray-400">{cellData.orders} ped.</p>
+                              </div>
+                            ) : (
+                              <span className="text-gray-300">-</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td className="text-right p-2 font-black text-[#6B1B8E]">{fmt(compStats.revenue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Daily Chart */}
+            {data.dailyData && data.dailyData.length > 0 && (
+              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <TrendingUp size={18} className="text-[#6B1B8E]" /> Evolucao Diaria
+                </h3>
+                <ResponsiveContainer width="100%" height={250}>
+                  <AreaChart data={data.dailyData}>
+                    <defs>
+                      <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6B1B8E" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#6B1B8E" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={v => v.slice(5)} />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
+                    <Tooltip
+                      formatter={(value) => [fmt(value), 'Faturamento']}
+                      labelFormatter={(label) => `Data: ${label}`}
+                    />
+                    <Area type="monotone" dataKey="revenue" stroke="#6B1B8E" fill="url(#colorRevenue)" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Top Products */}
+            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+              <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <Award size={18} className="text-[#6B1B8E]" /> Top Produtos Vendidos
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left p-2 text-xs font-bold text-gray-500">#</th>
+                      <th className="text-left p-2 text-xs font-bold text-gray-500">SKU</th>
+                      <th className="text-left p-2 text-xs font-bold text-gray-500">Produto</th>
+                      <th className="text-center p-2 text-xs font-bold text-gray-500">Qtd</th>
+                      <th className="text-right p-2 text-xs font-bold text-gray-500">Faturamento</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.topProducts.slice(0, 20).map((p, i) => (
+                      <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
+                        <td className="p-2 text-gray-400 font-bold">{i + 1}</td>
+                        <td className="p-2 font-mono text-xs text-gray-600">{p.sku || '-'}</td>
+                        <td className="p-2 font-medium text-gray-800 max-w-xs truncate">{p.name}</td>
+                        <td className="p-2 text-center">
+                          <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-bold">{p.quantity}</span>
+                        </td>
+                        <td className="p-2 text-right font-bold text-[#6B1B8E]">{fmt(p.revenue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
   // Route renderer
   const renderContent = () => {
     switch (activeTab) {
@@ -3134,6 +3997,7 @@ const App = () => {
       case 'recebimento': return <RecebimentoView />;
       case 'aguamarinha': return <AguaMarinhaView />;
       case 'vendedor': return <VendedorView />;
+      case 'analytics': return <AnalyticsView />;
       case 'times': return <TimesView />;
       case 'pedidos': return <PedidoFornecedorView />;
       case 'precificacao': return <PrecificacaoView />;
