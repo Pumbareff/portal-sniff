@@ -2638,6 +2638,14 @@ const App = () => {
       setPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, status: newStatus } : p));
     };
 
+    const handleDeletePedido = async (pedido) => {
+      if (!confirm(`Excluir pedido ${pedido.numero_oc}?`)) return;
+      try {
+        await supabase.from('pedidos_fornecedor').delete().eq('id', pedido.id);
+      } catch {}
+      setPedidos(prev => prev.filter(p => p.id !== pedido.id));
+    };
+
     const filteredPedidos = pedidos.filter(p => {
       if (activeFilter === 'todos') return true;
       return p.status === activeFilter;
@@ -2766,6 +2774,7 @@ const App = () => {
                           </>
                         )}
                         <button onClick={() => setViewingDetail(p)} className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100" title="Ver Detalhes"><Eye size={15} /></button>
+                        <button onClick={() => handleDeletePedido(p)} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50" title="Excluir"><Trash2 size={15} /></button>
                       </div>
                     </td>
                   </tr>
