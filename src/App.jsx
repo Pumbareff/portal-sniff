@@ -19,6 +19,7 @@ import {
   DollarSign,
   Info,
   ChevronRight,
+  ChevronDown,
   Menu,
   X,
   Edit2,
@@ -41,7 +42,11 @@ import {
   Video,
   Flag,
   ArrowRight,
-  RefreshCw
+  RefreshCw,
+  Warehouse,
+  Star,
+  Camera,
+  Upload
 } from 'lucide-react';
 import {
   BarChart,
@@ -93,6 +98,14 @@ const App = () => {
   const [allProfiles, setAllProfiles] = useState([]);
   const [showPermissionsModal, setShowPermissionsModal] = useState(false);
   const [editingProfile, setEditingProfile] = useState(null);
+
+  // States para Pedido Fornecedor (lifted for persistence across tabs)
+  const pedidoEmptyItem = { sku: '', produto: '', quantidade: '', preco_unitario: '', peso_unitario: '' };
+  const [pedidoShowForm, setPedidoShowForm] = useState(false);
+  const [pedidoFormData, setPedidoFormData] = useState({
+    fornecedor: '', items: [{ ...pedidoEmptyItem }],
+    prazo_entrega: '', observacoes: ''
+  });
 
   // Check auth on mount
   useEffect(() => {
@@ -191,6 +204,7 @@ const App = () => {
   const [showDefesaModal, setShowDefesaModal] = useState(false);
   const [amClips, setAmClips] = useState([]);
   const [showClipModal, setShowClipModal] = useState(false);
+  const [showDestaqueModal, setShowDestaqueModal] = useState(false);
   const [defesaFilter, setDefesaFilter] = useState('todos');
 
   // Load comunicados
@@ -364,7 +378,8 @@ const App = () => {
         vendedor: false,
         times: false,
         sku: false,
-        pedidos: false
+        pedidos: false,
+        analise_vendas: false
       };
 
       await supabase
@@ -406,13 +421,16 @@ const App = () => {
         times: formData.get('times') === 'on',
         sku: formData.get('sku') === 'on',
         pedidos: formData.get('pedidos') === 'on',
+        marketing: formData.get('marketing') === 'on',
+        fulfillment: formData.get('fulfillment') === 'on',
         precificacao: formData.get('precificacao') === 'on',
         dashboard_am: formData.get('dashboard_am') === 'on',
         defesa: formData.get('defesa') === 'on',
         checklist: formData.get('checklist') === 'on',
         preco: formData.get('preco') === 'on',
         tracker: formData.get('tracker') === 'on',
-        sobre_am: formData.get('sobre_am') === 'on'
+        sobre_am: formData.get('sobre_am') === 'on',
+        analise_vendas: formData.get('analise_vendas') === 'on'
       };
 
       await supabase
@@ -573,7 +591,7 @@ const App = () => {
                 <div>
                   <h4 className="font-bold text-gray-700 mb-3">Modulos Principais</h4>
                   <div className="grid grid-cols-2 gap-3">
-                    {['dashboard', 'academy', 'recebimento', 'precificacao', 'agua_marinha', 'vendedor', 'times', 'sku', 'pedidos'].map(perm => (
+                    {['dashboard', 'academy', 'recebimento', 'precificacao', 'agua_marinha', 'vendedor', 'times', 'sku', 'pedidos', 'marketing', 'fulfillment', 'analise_vendas'].map(perm => (
                       <label key={perm} className="flex items-center gap-2 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
                         <input
                           type="checkbox"
@@ -626,7 +644,10 @@ const App = () => {
       { id: 'analytics', label: 'Analytics', icon: BarChart3, permission: 'analytics' },
       { id: 'times', label: 'Gestao de Times', icon: Users, permission: 'times' },
       { id: 'pedidos', label: 'Pedidos Fornecedor', icon: Truck, permission: 'pedidos' },
+      { id: 'marketing', label: 'Marketing', icon: Megaphone, permission: 'marketing' },
+      { id: 'fulfillment', label: 'Fulfillment', icon: Warehouse, permission: 'fulfillment' },
       { id: 'precificacao', label: 'Precificacao', icon: DollarSign, permission: 'precificacao' },
+      { id: 'analisevendas', label: 'Analise de Vendas', icon: TrendingUp, permission: 'analise_vendas' },
     ];
 
     // Add admin panel if user is admin
@@ -650,20 +671,47 @@ const App = () => {
         </div>
 
         <nav className="mt-6 px-3 space-y-1">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-4 p-3 rounded-xl transition-all ${
-                activeTab === item.id
-                ? 'bg-[#F4B942] text-[#6B1B8E] shadow-lg'
-                : 'hover:bg-[#4A1063] text-purple-100'
-              }`}
-            >
-              <item.icon size={22} />
-              {isSidebarOpen && <span className="font-medium">{item.label}</span>}
-            </button>
-          ))}
+          {navItems.map((item) => {
+            const marketingChildren = ['marketing', 'gestao_anuncios'];
+            const isMarketingGroup = item.id === 'marketing';
+            const isMarketingExpanded = isMarketingGroup && marketingChildren.includes(activeTab);
+            const isActive = activeTab === item.id || (isMarketingGroup && activeTab === 'gestao_anuncios');
+
+            return (
+              <div key={item.id}>
+                <button
+                  onClick={() => setActiveTab(item.id)}
+                  className={`w-full flex items-center gap-4 p-3 rounded-xl transition-all ${
+                    isActive
+                    ? 'bg-[#F4B942] text-[#6B1B8E] shadow-lg'
+                    : 'hover:bg-[#4A1063] text-purple-100'
+                  }`}
+                >
+                  <item.icon size={22} />
+                  {isSidebarOpen && <span className="font-medium flex-1 text-left">{item.label}</span>}
+                  {isMarketingGroup && isSidebarOpen && (
+                    <ChevronDown size={16} className={`transition-transform ${isMarketingExpanded ? 'rotate-0' : '-rotate-90'}`} />
+                  )}
+                </button>
+                {isMarketingGroup && isMarketingExpanded && isSidebarOpen && (
+                  <div className="ml-9 mt-1 space-y-0.5">
+                    <button
+                      onClick={() => setActiveTab('marketing')}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${activeTab === 'marketing' ? 'bg-white/20 text-white font-medium' : 'text-purple-200 hover:text-white hover:bg-white/10'}`}
+                    >
+                      Gestao Produtos Comprados
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('gestao_anuncios')}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${activeTab === 'gestao_anuncios' ? 'bg-white/20 text-white font-medium' : 'text-purple-200 hover:text-white hover:bg-white/10'}`}
+                    >
+                      Gestao de Produtos Parados
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="absolute bottom-6 w-full px-3">
@@ -682,83 +730,206 @@ const App = () => {
   // 1. Dashboard Module
   const DashboardView = () => {
     const [comForm, setComForm] = useState({ title: '', message: '', priority: 'info' });
+    const [editingCom, setEditingCom] = useState(null);
     const [dataForm, setDataForm] = useState({ title: '', description: '', date: '', category: 'evento' });
+    const [editingData, setEditingData] = useState(null);
+    const [destaques, setDestaques] = useState({ vendedores: [], funcionarios: [] });
+    const [destaqueForm, setDestaqueForm] = useState({ nome: '', area: '', destaque: '', tipo: 'vendedor_do_mes' });
+    const [destaqueFile, setDestaqueFile] = useState(null);
+    const [destaqueUploading, setDestaqueUploading] = useState(false);
+
+    const loadDestaques = async () => {
+      const mesRef = new Date().toISOString().slice(0, 8) + '01';
+      const { data } = await supabase.from('reconhecimento').select('*').eq('mes_referencia', mesRef).order('created_at', { ascending: false });
+      if (data) {
+        setDestaques({
+          vendedores: data.filter(d => d.tipo === 'vendedor_do_mes'),
+          funcionarios: data.filter(d => d.tipo === 'funcionario_do_mes')
+        });
+      }
+    };
+
+    useEffect(() => { loadDestaques(); }, []);
+
+    const fileToBase64 = (file) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const handleSaveDestaque = async () => {
+      if (!destaqueForm.nome) return alert('Preencha o nome.');
+      setDestaqueUploading(true);
+      try {
+        let foto_base64 = null;
+        let foto_ext = null;
+        if (destaqueFile) {
+          foto_base64 = await fileToBase64(destaqueFile);
+          foto_ext = destaqueFile.name.split('.').pop();
+        }
+        const mesRef = new Date().toISOString().slice(0, 8) + '01';
+        const token = (await supabase.auth.getSession()).data.session?.access_token;
+        const resp = await fetch('/api/reconhecimento', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ nome: destaqueForm.nome, area: destaqueForm.area || null, destaque: destaqueForm.destaque || null, tipo: destaqueForm.tipo, foto_base64, foto_ext, mes_referencia: mesRef })
+        });
+        const result = await resp.json();
+        if (!resp.ok) throw new Error(result.error || 'Erro ao salvar');
+        await loadDestaques();
+        setShowDestaqueModal(false);
+        setDestaqueForm({ nome: '', area: '', destaque: '', tipo: 'vendedor_do_mes' });
+        setDestaqueFile(null);
+      } catch (err) {
+        alert('Erro ao salvar destaque: ' + err.message);
+      }
+      setDestaqueUploading(false);
+    };
+
+    const handleDeleteDestaque = async (id) => {
+      if (!confirm('Remover este destaque?')) return;
+      try {
+        const token = (await supabase.auth.getSession()).data.session?.access_token;
+        const resp = await fetch('/api/reconhecimento', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ id })
+        });
+        if (!resp.ok) { const r = await resp.json(); throw new Error(r.error); }
+      } catch (err) { alert('Erro ao remover: ' + err.message); }
+      await loadDestaques();
+    };
 
     const handleAddComunicado = async () => {
       if (!comForm.title || !comForm.message) return;
-      const { data } = await supabase.from('comunicados').insert([{ ...comForm, author: profile?.full_name || 'Admin', user_id: user.id }]).select();
-      if (data) { setComunicados(prev => [data[0], ...prev]); setShowComunicadoModal(false); setComForm({ title: '', message: '', priority: 'info' }); }
+      if (editingCom) {
+        const { data } = await supabase.from('comunicados').update({ title: comForm.title, message: comForm.message, priority: comForm.priority }).eq('id', editingCom.id).select();
+        if (data) setComunicados(prev => prev.map(c => c.id === editingCom.id ? data[0] : c));
+      } else {
+        const { data } = await supabase.from('comunicados').insert([{ ...comForm, author: profile?.full_name || 'Admin', user_id: user.id }]).select();
+        if (data) setComunicados(prev => [data[0], ...prev]);
+      }
+      setShowComunicadoModal(false); setEditingCom(null); setComForm({ title: '', message: '', priority: 'info' });
+    };
+
+    const handleDeleteComunicado = async (id) => {
+      if (!confirm('Remover este comunicado?')) return;
+      await supabase.from('comunicados').delete().eq('id', id);
+      setComunicados(prev => prev.filter(c => c.id !== id));
     };
 
     const handleAddData = async () => {
       if (!dataForm.title || !dataForm.date) return;
-      const { data } = await supabase.from('datas_importantes').insert([{ ...dataForm, user_id: user.id }]).select();
-      if (data) { setDatasImportantes(prev => [...prev, data[0]].sort((a,b) => new Date(a.date) - new Date(b.date))); setShowDataModal(false); setDataForm({ title: '', description: '', date: '', category: 'evento' }); }
+      if (editingData) {
+        const { data } = await supabase.from('datas_importantes').update({ title: dataForm.title, description: dataForm.description, date: dataForm.date, category: dataForm.category }).eq('id', editingData.id).select();
+        if (data) setDatasImportantes(prev => prev.map(d => d.id === editingData.id ? data[0] : d).sort((a,b) => new Date(a.date) - new Date(b.date)));
+      } else {
+        const { data } = await supabase.from('datas_importantes').insert([{ ...dataForm, user_id: user.id }]).select();
+        if (data) setDatasImportantes(prev => [...prev, data[0]].sort((a,b) => new Date(a.date) - new Date(b.date)));
+      }
+      setShowDataModal(false); setEditingData(null); setDataForm({ title: '', description: '', date: '', category: 'evento' });
+    };
+
+    const handleDeleteData = async (id) => {
+      if (!confirm('Remover esta data?')) return;
+      await supabase.from('datas_importantes').delete().eq('id', id);
+      setDatasImportantes(prev => prev.filter(d => d.id !== id));
     };
 
     const daysUntil = (dateStr) => { const d = Math.ceil((new Date(dateStr) - new Date()) / 86400000); return d; };
     const priorityStyles = { urgente: 'bg-red-100 text-red-700 border-red-200', importante: 'bg-yellow-100 text-yellow-700 border-yellow-200', info: 'bg-gray-100 text-gray-600 border-gray-200' };
     const catStyles = { feriado: 'bg-red-100 text-red-700', meta: 'bg-purple-100 text-purple-700', evento: 'bg-blue-100 text-blue-700', deadline: 'bg-orange-100 text-orange-700' };
 
+    const getInitials = (name) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '??';
+    const mesAtual = new Date().toLocaleDateString('pt-BR', { month: 'long' }).replace(/^\w/, c => c.toUpperCase());
+
+    const DestaqueCard = ({ titulo, cor, icone, pessoas, corBorda, tipo }) => (
+      <div className={`${cor} p-6 rounded-2xl shadow-lg relative overflow-hidden`}>
+        <div className="relative z-10">
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2">
+              {icone}
+              <div>
+                <h3 className="text-lg font-bold text-white">{titulo}</h3>
+                <p className="text-xs text-white/60">{mesAtual} 2026</p>
+              </div>
+            </div>
+            {profile?.role === 'admin' && (
+              <button onClick={() => { setDestaqueForm({ nome: '', area: '', destaque: '', tipo }); setDestaqueFile(null); setShowDestaqueModal(true); }} className="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1">
+                <Plus size={12} /> Adicionar
+              </button>
+            )}
+          </div>
+          {pessoas.length > 0 ? (
+            <div className="space-y-4">
+              {pessoas.map((p, i) => (
+                <div key={i} className="flex items-center gap-3 group">
+                  <div className={`w-14 h-14 rounded-full ${corBorda} border-4 p-0.5 flex-shrink-0`}>
+                    {p.foto_url ? (
+                      <img src={p.foto_url} alt={p.nome} className="w-full h-full rounded-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full rounded-full bg-white flex items-center justify-center text-[#6B1B8E] font-bold text-lg">{getInitials(p.nome)}</div>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-bold text-white">{p.nome}</p>
+                    <p className="text-xs text-white/70">{p.area || ''}</p>
+                    {p.destaque && <p className="text-xs text-white/50 mt-0.5">{p.destaque}</p>}
+                  </div>
+                  {i === 0 && <span className="text-2xl">&#127942;</span>}
+                  {profile?.role === 'admin' && (
+                    <button onClick={() => handleDeleteDestaque(p.id)} className="opacity-0 group-hover:opacity-100 text-white/50 hover:text-red-300 transition-all" title="Remover">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-6">
+              <p className="text-white/50 text-sm">Nenhum destaque definido para {mesAtual}.</p>
+              <p className="text-white/30 text-xs mt-1">Clique em Adicionar para cadastrar</p>
+            </div>
+          )}
+        </div>
+        <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-white/5 rounded-full blur-3xl"></div>
+      </div>
+    );
+
     return (
       <div className="space-y-6 animate-fadeIn">
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[
-            { label: 'Vendas Total', value: 'R$ 1.242.000', icon: DollarSign, color: 'text-green-600', trend: '+12%' },
-            { label: 'Meta Mensal', value: '85%', icon: Target, color: 'text-blue-600', trend: '+5%' },
-            { label: 'Novos Pedidos', value: '1,420', icon: Package, color: 'text-purple-600', trend: '+18%' },
-            { label: 'SLA Entrega', value: '98.2%', icon: CheckCircle2, color: 'text-orange-600', trend: '+0.5%' },
-          ].map((kpi, idx) => (
-            <div key={idx} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-              <div className="flex justify-between items-start">
-                <div className={`p-3 rounded-xl bg-gray-50 ${kpi.color}`}><kpi.icon size={24} /></div>
-                <span className="text-xs font-bold text-green-500 bg-green-50 px-2 py-1 rounded-full">{kpi.trend}</span>
-              </div>
-              <div className="mt-4">
-                <p className="text-sm text-gray-500 font-medium">{kpi.label}</p>
-                <h3 className="text-2xl font-bold text-gray-800">{kpi.value}</h3>
-              </div>
-            </div>
-          ))}
+        {/* Welcome Banner */}
+        <div className="bg-gradient-to-r from-[#6B1B8E] via-[#8B2FC0] to-[#6B1B8E] p-8 rounded-2xl shadow-lg relative overflow-hidden">
+          <div className="relative z-10">
+            <h1 className="text-3xl font-black text-white">Sejam Bem-vindos, Sniffers!</h1>
+            <p className="text-purple-200 mt-2 text-lg">
+              {profile?.full_name ? `Ola, ${profile.full_name.split(' ')[0]}!` : 'Ola!'}{' '}
+              {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())}
+            </p>
+          </div>
+          <div className="absolute -top-20 -right-20 w-60 h-60 bg-[#F4B942]/10 rounded-full blur-3xl"></div>
+          <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-white/5 rounded-full blur-3xl"></div>
         </div>
 
-        {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-            <h3 className="text-lg font-bold mb-6 text-gray-800">Performance de Vendas vs Meta</h3>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={salesData}>
-                  <defs><linearGradient id="colorVendas" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#6B1B8E" stopOpacity={0.1}/><stop offset="95%" stopColor="#6B1B8E" stopOpacity={0}/></linearGradient></defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                  <YAxis axisLine={false} tickLine={false} />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="vendas" stroke="#6B1B8E" strokeWidth={3} fillOpacity={1} fill="url(#colorVendas)" />
-                  <Line type="monotone" dataKey="meta" stroke="#F4B942" strokeDasharray="5 5" strokeWidth={2} dot={false} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-          <div className="bg-[#6B1B8E] text-white p-6 rounded-2xl shadow-lg relative overflow-hidden">
-            <div className="relative z-10">
-              <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Award className="text-[#F4B942]" /> Reconhecimento</h3>
-              <div className="space-y-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-full bg-[#F4B942] border-4 border-purple-400 p-1"><div className="w-full h-full rounded-full bg-white flex items-center justify-center text-[#6B1B8E] font-bold text-xl">RP</div></div>
-                  <div><p className="text-xs text-purple-200">Vendedor do Mes</p><p className="font-bold text-lg text-[#F4B942]">Ricardo Pereira</p><p className="text-xs text-purple-100">Regional Sul - R$ 450k</p></div>
-                </div>
-                <div className="h-px bg-purple-500/50" />
-                <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-full bg-white/20 border-4 border-white/10 p-1"><div className="w-full h-full rounded-full bg-white flex items-center justify-center text-[#6B1B8E] font-bold text-xl">AM</div></div>
-                  <div><p className="text-xs text-purple-200">Colaborador Destaque</p><p className="font-bold text-lg">Ana Martins</p><p className="text-xs text-purple-100">Logistica - Eficiencia 100%</p></div>
-                </div>
-              </div>
-              <button className="mt-8 w-full bg-[#F4B942] text-[#6B1B8E] py-2 rounded-xl font-bold text-sm hover:brightness-110 transition-all">Ver Todos os Rankings</button>
-            </div>
-            <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-white/5 rounded-full blur-3xl"></div>
-          </div>
+        {/* Vendedor do Mes + Funcionario do Mes */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <DestaqueCard
+            titulo="Vendedor do Mes"
+            cor="bg-gradient-to-br from-[#6B1B8E] to-[#4A1063]"
+            icone={<Award size={28} className="text-[#F4B942]" />}
+            pessoas={destaques.vendedores}
+            corBorda="border-[#F4B942]"
+            tipo="vendedor_do_mes"
+          />
+          <DestaqueCard
+            titulo="Funcionario do Mes"
+            cor="bg-gradient-to-br from-[#1B6B3E] to-[#0D4A26]"
+            icone={<Star size={28} className="text-[#F4B942]" />}
+            pessoas={destaques.funcionarios}
+            corBorda="border-emerald-300"
+            tipo="funcionario_do_mes"
+          />
         </div>
 
         {/* Comunicados + Datas Importantes */}
@@ -767,26 +938,32 @@ const App = () => {
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Megaphone size={20} className="text-[#6B1B8E]" /> Comunicados</h3>
-              <button onClick={() => setShowComunicadoModal(true)} className="flex items-center gap-1 bg-[#6B1B8E] text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-[#4A1063] transition-colors"><Plus size={14} /> Novo</button>
+              {profile?.role === 'admin' && <button onClick={() => { setEditingCom(null); setComForm({ title: '', message: '', priority: 'info' }); setShowComunicadoModal(true); }} className="flex items-center gap-1 bg-[#6B1B8E] text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-[#4A1063] transition-colors"><Plus size={14} /> Novo</button>}
             </div>
             {comunicados.length === 0 ? (
               <p className="text-gray-400 text-sm text-center py-8">Nenhum comunicado ainda.</p>
             ) : (
-              <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                {comunicados.slice(0, 5).map(c => (
-                  <div key={c.id} className={`p-3 rounded-xl border ${priorityStyles[c.priority] || priorityStyles.info}`}>
+              <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                {comunicados.slice(0, 8).map(c => (
+                  <div key={c.id} className={`p-3 rounded-xl border ${priorityStyles[c.priority] || priorityStyles.info} group`}>
                     <div className="flex items-start justify-between gap-2">
-                      <div>
+                      <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded ${priorityStyles[c.priority]}`}>{c.priority}</span>
                           <h4 className="font-bold text-sm">{c.title}</h4>
                         </div>
                         <p className="text-xs mt-1 opacity-80">{c.message}</p>
                       </div>
+                      {profile?.role === 'admin' && (
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                          <button onClick={() => { setEditingCom(c); setComForm({ title: c.title, message: c.message, priority: c.priority }); setShowComunicadoModal(true); }} className="p-1 hover:bg-white/50 rounded" title="Editar"><Edit2 size={12} /></button>
+                          <button onClick={() => handleDeleteComunicado(c.id)} className="p-1 hover:bg-red-100 rounded text-red-500" title="Remover"><Trash2 size={12} /></button>
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 mt-2 text-[10px] opacity-60">
                       <span>{c.author}</span>
-                      <span>•</span>
+                      <span>-</span>
                       <span>{new Date(c.created_at).toLocaleDateString('pt-BR')}</span>
                     </div>
                   </div>
@@ -799,14 +976,14 @@ const App = () => {
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><CalendarDays size={20} className="text-[#6B1B8E]" /> Datas Importantes</h3>
-              <button onClick={() => setShowDataModal(true)} className="flex items-center gap-1 bg-[#6B1B8E] text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-[#4A1063] transition-colors"><Plus size={14} /> Adicionar</button>
+              {profile?.role === 'admin' && <button onClick={() => { setEditingData(null); setDataForm({ title: '', description: '', date: '', category: 'evento' }); setShowDataModal(true); }} className="flex items-center gap-1 bg-[#6B1B8E] text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-[#4A1063] transition-colors"><Plus size={14} /> Adicionar</button>}
             </div>
             {datasImportantes.length === 0 ? (
               <p className="text-gray-400 text-sm text-center py-8">Nenhuma data cadastrada.</p>
             ) : (
-              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+              <div className="space-y-2 max-h-[400px] overflow-y-auto">
                 {datasImportantes.filter(d => daysUntil(d.date) >= 0).map(d => (
-                  <div key={d.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors border border-gray-50">
+                  <div key={d.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors border border-gray-50 group">
                     <div className="text-center min-w-[48px]">
                       <p className="text-lg font-black text-[#6B1B8E]">{new Date(d.date + 'T12:00:00').getDate()}</p>
                       <p className="text-[10px] uppercase font-bold text-gray-400">{new Date(d.date + 'T12:00:00').toLocaleDateString('pt-BR', { month: 'short' })}</p>
@@ -818,6 +995,12 @@ const App = () => {
                       </div>
                       {d.description && <p className="text-xs text-gray-500 mt-0.5">{d.description}</p>}
                     </div>
+                    {profile?.role === 'admin' && (
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        <button onClick={() => { setEditingData(d); setDataForm({ title: d.title, description: d.description || '', date: d.date, category: d.category }); setShowDataModal(true); }} className="p-1 hover:bg-gray-200 rounded" title="Editar"><Edit2 size={12} /></button>
+                        <button onClick={() => handleDeleteData(d.id)} className="p-1 hover:bg-red-100 rounded text-red-500" title="Remover"><Trash2 size={12} /></button>
+                      </div>
+                    )}
                     <div className="text-right min-w-[60px]">
                       {daysUntil(d.date) === 0 ? (
                         <span className="text-xs font-black text-green-600">HOJE!</span>
@@ -834,9 +1017,9 @@ const App = () => {
 
         {/* Modal Comunicado */}
         {showComunicadoModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowComunicadoModal(false)}>
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { setShowComunicadoModal(false); setEditingCom(null); setComForm({ title: '', message: '', priority: 'info' }); }}>
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
-              <h3 className="text-lg font-bold mb-4">Novo Comunicado</h3>
+              <h3 className="text-lg font-bold mb-4">{editingCom ? 'Editar Comunicado' : 'Novo Comunicado'}</h3>
               <div className="space-y-3">
                 <input placeholder="Titulo" value={comForm.title} onChange={e => setComForm({...comForm, title: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
                 <textarea placeholder="Mensagem" rows={3} value={comForm.message} onChange={e => setComForm({...comForm, message: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
@@ -847,8 +1030,8 @@ const App = () => {
                 </select>
               </div>
               <div className="flex gap-2 mt-4">
-                <button onClick={() => setShowComunicadoModal(false)} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm font-bold hover:bg-gray-50">Cancelar</button>
-                <button onClick={handleAddComunicado} className="flex-1 py-2 bg-[#6B1B8E] text-white rounded-lg text-sm font-bold hover:bg-[#4A1063]">Publicar</button>
+                <button onClick={() => { setShowComunicadoModal(false); setEditingCom(null); setComForm({ title: '', message: '', priority: 'info' }); }} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm font-bold hover:bg-gray-50">Cancelar</button>
+                <button onClick={handleAddComunicado} className="flex-1 py-2 bg-[#6B1B8E] text-white rounded-lg text-sm font-bold hover:bg-[#4A1063]">{editingCom ? 'Salvar' : 'Publicar'}</button>
               </div>
             </div>
           </div>
@@ -856,9 +1039,9 @@ const App = () => {
 
         {/* Modal Data Importante */}
         {showDataModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowDataModal(false)}>
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { setShowDataModal(false); setEditingData(null); setDataForm({ title: '', description: '', date: '', category: 'evento' }); }}>
             <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
-              <h3 className="text-lg font-bold mb-4">Adicionar Data Importante</h3>
+              <h3 className="text-lg font-bold mb-4">{editingData ? 'Editar Data Importante' : 'Adicionar Data Importante'}</h3>
               <div className="space-y-3">
                 <input placeholder="Titulo" value={dataForm.title} onChange={e => setDataForm({...dataForm, title: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
                 <input placeholder="Descricao (opcional)" value={dataForm.description} onChange={e => setDataForm({...dataForm, description: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
@@ -871,8 +1054,49 @@ const App = () => {
                 </select>
               </div>
               <div className="flex gap-2 mt-4">
-                <button onClick={() => setShowDataModal(false)} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm font-bold hover:bg-gray-50">Cancelar</button>
-                <button onClick={handleAddData} className="flex-1 py-2 bg-[#6B1B8E] text-white rounded-lg text-sm font-bold hover:bg-[#4A1063]">Salvar</button>
+                <button onClick={() => { setShowDataModal(false); setEditingData(null); setDataForm({ title: '', description: '', date: '', category: 'evento' }); }} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm font-bold hover:bg-gray-50">Cancelar</button>
+                <button onClick={handleAddData} className="flex-1 py-2 bg-[#6B1B8E] text-white rounded-lg text-sm font-bold hover:bg-[#4A1063]">{editingData ? 'Salvar' : 'Adicionar'}</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Destaque (Vendedor/Funcionario do Mes) */}
+        {showDestaqueModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowDestaqueModal(false)}>
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                <Camera size={20} className="text-[#6B1B8E]" />
+                {destaqueForm.tipo === 'vendedor_do_mes' ? 'Vendedor do Mes' : 'Funcionario do Mes'}
+              </h3>
+              <div className="space-y-3">
+                <input placeholder="Nome completo" value={destaqueForm.nome} onChange={e => setDestaqueForm({...destaqueForm, nome: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
+                <input placeholder="Setor / Area" value={destaqueForm.area} onChange={e => setDestaqueForm({...destaqueForm, area: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
+                <input placeholder="Motivo do reconhecimento" value={destaqueForm.destaque} onChange={e => setDestaqueForm({...destaqueForm, destaque: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
+                <select value={destaqueForm.tipo} onChange={e => setDestaqueForm({...destaqueForm, tipo: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none">
+                  <option value="vendedor_do_mes">Vendedor do Mes</option>
+                  <option value="funcionario_do_mes">Funcionario do Mes</option>
+                </select>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 mb-1">Foto do colaborador</label>
+                  <label className="flex items-center gap-2 px-3 py-3 border-2 border-dashed border-gray-200 rounded-lg cursor-pointer hover:border-[#6B1B8E] hover:bg-purple-50 transition-colors">
+                    <Upload size={18} className="text-gray-400" />
+                    <span className="text-sm text-gray-500">{destaqueFile ? destaqueFile.name : 'Clique para selecionar foto...'}</span>
+                    <input type="file" accept="image/*" className="hidden" onChange={e => setDestaqueFile(e.target.files[0] || null)} />
+                  </label>
+                  {destaqueFile && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <img src={URL.createObjectURL(destaqueFile)} alt="Preview" className="w-16 h-16 rounded-full object-cover border-2 border-[#6B1B8E]" />
+                      <button onClick={() => setDestaqueFile(null)} className="text-xs text-red-500 hover:text-red-700">Remover</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-2 mt-4">
+                <button onClick={() => setShowDestaqueModal(false)} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm font-bold hover:bg-gray-50">Cancelar</button>
+                <button onClick={handleSaveDestaque} disabled={destaqueUploading} className="flex-1 py-2 bg-[#6B1B8E] text-white rounded-lg text-sm font-bold hover:bg-[#4A1063] disabled:opacity-50 disabled:cursor-not-allowed">
+                  {destaqueUploading ? 'Salvando...' : 'Salvar'}
+                </button>
               </div>
             </div>
           </div>
@@ -1401,13 +1625,28 @@ const App = () => {
         created_by: user?.id || null
       };
       if (editingId) {
-        const { error } = await supabase.from('recebimentos').update(payload).eq('id', editingId);
-        if (!error) {
-          setRecebimentos(prev => prev.map(r => r.id === editingId ? { ...r, ...payload } : r));
+        const { data, error } = await supabase.from('recebimentos').update(payload).eq('id', editingId).select();
+        if (error) {
+          alert('Erro ao salvar: ' + error.message);
+          console.error('Update error:', error);
+          return;
+        }
+        if (data && data.length > 0) {
+          setRecebimentos(prev => prev.map(r => r.id === editingId ? data[0] : r));
+        } else {
+          alert('Nao foi possivel salvar. Verifique as permissoes da tabela no Supabase (RLS).');
+          return;
         }
       } else {
         const { data, error } = await supabase.from('recebimentos').insert([payload]).select();
-        if (data) setRecebimentos(prev => [data[0], ...prev]);
+        if (error) {
+          alert('Erro ao criar: ' + error.message);
+          console.error('Insert error:', error);
+          return;
+        }
+        if (data && data.length > 0) {
+          setRecebimentos(prev => [data[0], ...prev]);
+        }
       }
       resetForm();
     };
@@ -1544,7 +1783,7 @@ const App = () => {
                   return (
                     <tr key={rec.id} className="hover:bg-gray-50">
                       <td className="px-6 py-3 font-medium text-gray-800">{rec.fornecedor}</td>
-                      <td className="px-6 py-3">{rec.data_recebimento ? new Date(rec.data_recebimento).toLocaleDateString('pt-BR') : (extra.data ? new Date(extra.data).toLocaleDateString('pt-BR') : new Date(rec.created_at).toLocaleDateString('pt-BR'))}</td>
+                      <td className="px-6 py-3">{rec.data_recebimento ? new Date(rec.data_recebimento + 'T12:00:00').toLocaleDateString('pt-BR') : (extra.data ? new Date(extra.data + 'T12:00:00').toLocaleDateString('pt-BR') : new Date(rec.created_at).toLocaleDateString('pt-BR'))}</td>
                       <td className="px-6 py-3">{rec.numero_nf || extra.nota_fiscal || '-'}</td>
                       <td className="px-6 py-3">{rec.pedido_next || '-'}</td>
                       <td className="px-6 py-3">{(rec.quantidade_caixas || 0).toLocaleString('pt-BR')}</td>
@@ -1682,6 +1921,7 @@ const App = () => {
                   <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-200 focus:border-[#6B1B8E] outline-none">
                     <option value="pendente">Pendente</option>
                     <option value="em_andamento">Em Andamento</option>
+                    <option value="entregue">Entregue</option>
                     <option value="concluido">Concluido</option>
                   </select>
                 </div>
@@ -2522,16 +2762,15 @@ const App = () => {
   // 5. Pedido Fornecedor View
   const PedidoFornecedorView = () => {
     const [pedidos, setPedidos] = useState([]);
-    const [showForm, setShowForm] = useState(false);
+    const showForm = pedidoShowForm;
+    const setShowForm = setPedidoShowForm;
+    const formData = pedidoFormData;
+    const setFormData = setPedidoFormData;
     const [activeFilter, setActiveFilter] = useState('todos');
     const [respondingTo, setRespondingTo] = useState(null);
     const [viewingDetail, setViewingDetail] = useState(null);
     const [dbReady, setDbReady] = useState(true);
-    const emptyItem = { sku: '', produto: '', quantidade: '', preco_unitario: '', peso_unitario: '' };
-    const [formData, setFormData] = useState({
-      fornecedor: '', items: [{ ...emptyItem }],
-      prazo_entrega: '', observacoes: ''
-    });
+    const emptyItem = pedidoEmptyItem;
     const [responseData, setResponseData] = useState({ preco_resposta: '', prazo_resposta: '' });
 
     // Load pedidos from Supabase
@@ -2644,6 +2883,69 @@ const App = () => {
         await supabase.from('pedidos_fornecedor').delete().eq('id', pedido.id);
       } catch {}
       setPedidos(prev => prev.filter(p => p.id !== pedido.id));
+    };
+
+    const handleDownloadPDF = (pedido) => {
+      const items = pedido.items || [];
+      const t = calcTotals(items);
+      const rows = items.map((item, i) => `
+        <tr>
+          <td style="border:1px solid #ddd;padding:8px;text-align:center">${i + 1}</td>
+          <td style="border:1px solid #ddd;padding:8px">${item.sku || '-'}</td>
+          <td style="border:1px solid #ddd;padding:8px">${item.produto || '-'}</td>
+          <td style="border:1px solid #ddd;padding:8px;text-align:center">${item.quantidade || 0}</td>
+          <td style="border:1px solid #ddd;padding:8px;text-align:right">R$ ${Number(item.preco_unitario || 0).toFixed(2)}</td>
+          <td style="border:1px solid #ddd;padding:8px;text-align:right">R$ ${((Number(item.quantidade) || 0) * (Number(item.preco_unitario) || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+        </tr>`).join('');
+
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${pedido.numero_oc}</title>
+        <style>body{font-family:Arial,sans-serif;padding:40px;color:#333}
+        .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px;border-bottom:3px solid #6B1B8E;padding-bottom:15px}
+        .logo{font-size:28px;font-weight:bold;color:#6B1B8E}
+        .logo span{color:#F4B942}
+        .oc-num{font-size:22px;color:#6B1B8E;font-weight:bold}
+        .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:25px}
+        .info-box{background:#f9f5ff;border-radius:8px;padding:12px}
+        .info-label{font-size:11px;color:#888;text-transform:uppercase;margin-bottom:4px}
+        .info-value{font-size:14px;font-weight:600}
+        table{width:100%;border-collapse:collapse;margin-bottom:20px}
+        th{background:#6B1B8E;color:white;padding:10px 8px;text-align:left;font-size:12px}
+        .totals{background:#f9f5ff;border-radius:8px;padding:15px;display:flex;justify-content:space-between}
+        .total-item{text-align:center}
+        .total-label{font-size:11px;color:#888;text-transform:uppercase}
+        .total-value{font-size:18px;font-weight:bold;color:#6B1B8E}
+        .footer{margin-top:40px;text-align:center;font-size:11px;color:#999;border-top:1px solid #eee;padding-top:15px}
+        @media print{body{padding:20px}}</style></head>
+        <body>
+          <div class="header">
+            <div class="logo">SNIFF <span>GROUP</span></div>
+            <div class="oc-num">${pedido.numero_oc}</div>
+          </div>
+          <div class="info-grid">
+            <div class="info-box"><div class="info-label">Fornecedor</div><div class="info-value">${pedido.fornecedor || '-'}</div></div>
+            <div class="info-box"><div class="info-label">Data do Pedido</div><div class="info-value">${pedido.created_at ? new Date(pedido.created_at).toLocaleDateString('pt-BR') : '-'}</div></div>
+            <div class="info-box"><div class="info-label">Status</div><div class="info-value">${(pedido.status || 'pendente').charAt(0).toUpperCase() + (pedido.status || 'pendente').slice(1)}</div></div>
+            <div class="info-box"><div class="info-label">Prazo de Entrega</div><div class="info-value">${pedido.prazo_entrega ? new Date(pedido.prazo_entrega).toLocaleDateString('pt-BR') : 'Nao informado'}</div></div>
+          </div>
+          <h3 style="color:#6B1B8E;margin-bottom:10px">Itens do Pedido</h3>
+          <table>
+            <thead><tr><th>#</th><th>SKU</th><th>Produto</th><th>Qtd</th><th>Preco Unit.</th><th>Subtotal</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <div class="totals">
+            <div class="total-item"><div class="total-label">Total Itens</div><div class="total-value">${items.length}</div></div>
+            <div class="total-item"><div class="total-label">Total Unidades</div><div class="total-value">${t.quantidade_total}</div></div>
+            <div class="total-item"><div class="total-label">Peso Total</div><div class="total-value">${t.peso_total.toFixed(2)} kg</div></div>
+            <div class="total-item"><div class="total-label">Valor Total</div><div class="total-value">R$ ${t.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div></div>
+          </div>
+          ${pedido.observacoes ? `<div style="margin-top:20px"><strong>Observacoes:</strong><p style="color:#555">${pedido.observacoes}</p></div>` : ''}
+          <div class="footer">Documento gerado em ${new Date().toLocaleDateString('pt-BR')} as ${new Date().toLocaleTimeString('pt-BR')} - SNIFF GROUP Portal</div>
+        </body></html>`;
+
+      const w = window.open('', '_blank');
+      w.document.write(html);
+      w.document.close();
+      w.onload = () => { w.print(); };
     };
 
     const filteredPedidos = pedidos.filter(p => {
@@ -2773,6 +3075,7 @@ const App = () => {
                             <button onClick={() => handleUpdateStatus(p, 'rejeitada')} className="p-1.5 rounded-lg text-red-600 hover:bg-red-50" title="Rejeitar"><XCircle size={15} /></button>
                           </>
                         )}
+                        <button onClick={() => handleDownloadPDF(p)} className="p-1.5 rounded-lg text-purple-600 hover:bg-purple-50" title="Baixar PDF"><Download size={15} /></button>
                         <button onClick={() => setViewingDetail(p)} className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100" title="Ver Detalhes"><Eye size={15} /></button>
                         <button onClick={() => handleDeletePedido(p)} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50" title="Excluir"><Trash2 size={15} /></button>
                       </div>
@@ -3998,6 +4301,1303 @@ const App = () => {
     );
   };
 
+  // ==================== MARKETING VIEW ====================
+  const MarketingView = () => {
+    const [mktSubTab, setMktSubTab] = useState('novos');
+    const [pedidos, setPedidos] = useState([]);
+    const [strategies, setStrategies] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [showStrategyModal, setShowStrategyModal] = useState(false);
+    const [selectedSku, setSelectedSku] = useState(null);
+    const [strategyForm, setStrategyForm] = useState({
+      marketplaces_foco: [],
+      tipo_estrategia: 'lancamento',
+      acoes_planejadas: [],
+      prioridade: 'media',
+      responsavel: '',
+      deadline: '',
+      observacoes: '',
+      ja_vendemos: false
+    });
+
+    const marketplaces = ['Mercado Livre', 'Shopee', 'Amazon', 'Magalu', 'Shein', 'Site Proprio'];
+    const tiposEstrategia = ['lancamento', 'reposicao', 'promocional', 'sazonal', 'teste'];
+    const acoesOptions = ['Criar Anuncio ML', 'Criar Anuncio Shopee', 'Foto Produto', 'Video/Clip', 'Campanha Ads', 'Precificacao PI', 'Cadastro Afiliados', 'Full/FBS'];
+    const statusFlow = ['pendente_analise', 'em_planejamento', 'em_execucao', 'concluido'];
+    const statusLabels = { pendente_analise: 'Pendente', em_planejamento: 'Em Planejamento', em_execucao: 'Em Execucao', concluido: 'Concluido' };
+    const statusColors = { pendente_analise: 'bg-yellow-100 text-yellow-800', em_planejamento: 'bg-blue-100 text-blue-800', em_execucao: 'bg-purple-100 text-purple-800', concluido: 'bg-green-100 text-green-800' };
+    const prioridadeColors = { alta: 'bg-red-100 text-red-700', media: 'bg-yellow-100 text-yellow-700', baixa: 'bg-green-100 text-green-700' };
+
+    const subTabs = [
+      { id: 'novos', label: 'Pedidos Novos', icon: AlertCircle, color: 'text-yellow-600' },
+      { id: 'planejamento', label: 'Em Planejamento', icon: FileText, color: 'text-blue-600' },
+      { id: 'execucao', label: 'Em Execucao', icon: Target, color: 'text-purple-600' },
+      { id: 'concluidos', label: 'Concluidos', icon: CheckCircle, color: 'text-green-600' }
+    ];
+
+    useEffect(() => { fetchData(); }, []);
+
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [pedRes, strRes] = await Promise.all([
+          supabase.from('pedidos_fornecedor').select('*').order('created_at', { ascending: false }),
+          supabase.from('marketing_strategies').select('*').order('created_at', { ascending: false })
+        ]);
+        if (pedRes.data) setPedidos(pedRes.data);
+        if (strRes.data) setStrategies(strRes.data);
+      } catch (err) { console.error('Marketing fetch error:', err); }
+      setLoading(false);
+    };
+
+    // Explode pedidos into individual SKU items
+    const allSkuItems = pedidos.flatMap(p =>
+      (p.items || []).map(item => ({
+        ...item,
+        pedido_id: p.id,
+        numero_oc: p.numero_oc,
+        fornecedor: p.fornecedor,
+        created_at: p.created_at,
+        subtotal: (Number(item.quantidade) || 0) * (Number(item.preco_unitario) || 0)
+      }))
+    );
+
+    const getStrategyForSku = (pedidoId, sku) => strategies.find(s => s.pedido_id === pedidoId && s.sku === sku);
+
+    const skuNovos = allSkuItems.filter(item => !getStrategyForSku(item.pedido_id, item.sku));
+    const skuByStatus = (status) => {
+      const strats = strategies.filter(s => s.status_marketing === status);
+      return strats.map(s => {
+        const pedido = pedidos.find(p => p.id === s.pedido_id);
+        const item = pedido?.items?.find(i => i.sku === s.sku) || {};
+        return { ...s, pedido, item };
+      }).filter(s => s.pedido);
+    };
+
+    const openStrategyModal = (skuItem) => {
+      setSelectedSku(skuItem);
+      const existing = getStrategyForSku(skuItem.pedido_id, skuItem.sku);
+      if (existing) {
+        setStrategyForm({
+          marketplaces_foco: existing.marketplaces_foco || [],
+          tipo_estrategia: existing.tipo_estrategia || 'lancamento',
+          acoes_planejadas: existing.acoes_planejadas || [],
+          prioridade: existing.prioridade || 'media',
+          responsavel: existing.responsavel || '',
+          deadline: existing.deadline || '',
+          observacoes: existing.observacoes || '',
+          ja_vendemos: existing.ja_vendemos || false
+        });
+      } else {
+        setStrategyForm({ marketplaces_foco: [], tipo_estrategia: 'lancamento', acoes_planejadas: [], prioridade: 'media', responsavel: '', deadline: '', observacoes: '', ja_vendemos: false });
+      }
+      setShowStrategyModal(true);
+    };
+
+    const toggleArrayItem = (arr, item) => arr.includes(item) ? arr.filter(i => i !== item) : [...arr, item];
+
+    const toggleJaVendemos = async (skuItem) => {
+      const existing = getStrategyForSku(skuItem.pedido_id, skuItem.sku);
+      if (existing) {
+        const newVal = !existing.ja_vendemos;
+        try {
+          const { data } = await supabase.from('marketing_strategies').update({ ja_vendemos: newVal, updated_at: new Date().toISOString() }).eq('id', existing.id).select();
+          if (data) setStrategies(prev => prev.map(s => s.id === existing.id ? data[0] : s));
+        } catch (err) { console.error('Toggle ja_vendemos error:', err); }
+      }
+    };
+
+    const handleSaveStrategy = async () => {
+      if (!selectedSku) return;
+      const existing = getStrategyForSku(selectedSku.pedido_id, selectedSku.sku);
+      const payload = {
+        pedido_id: selectedSku.pedido_id,
+        numero_oc: selectedSku.numero_oc,
+        produto: selectedSku.produto,
+        sku: selectedSku.sku,
+        ...strategyForm,
+        deadline: strategyForm.deadline || null,
+        status_marketing: existing ? existing.status_marketing : 'em_planejamento',
+        updated_at: new Date().toISOString()
+      };
+      try {
+        if (existing) {
+          const { data } = await supabase.from('marketing_strategies').update(payload).eq('id', existing.id).select();
+          if (data) setStrategies(prev => prev.map(s => s.id === existing.id ? data[0] : s));
+        } else {
+          const { data } = await supabase.from('marketing_strategies').insert(payload).select();
+          if (data) setStrategies(prev => [...data, ...prev]);
+        }
+      } catch (err) { console.error('Save strategy error:', err); }
+      setShowStrategyModal(false);
+      setSelectedSku(null);
+    };
+
+    const advanceStatus = async (strategyId) => {
+      const strat = strategies.find(s => s.id === strategyId);
+      if (!strat) return;
+      const currentIdx = statusFlow.indexOf(strat.status_marketing);
+      if (currentIdx >= statusFlow.length - 1) return;
+      const nextStatus = statusFlow[currentIdx + 1];
+      try {
+        const { data } = await supabase.from('marketing_strategies').update({ status_marketing: nextStatus, updated_at: new Date().toISOString() }).eq('id', strategyId).select();
+        if (data) setStrategies(prev => prev.map(s => s.id === strategyId ? data[0] : s));
+      } catch (err) { console.error('Advance status error:', err); }
+    };
+
+    const formatCurrency = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const formatDate = (d) => d ? new Date(d).toLocaleDateString('pt-BR') : '-';
+
+    const renderSkuRow = (skuItem, strategy = null) => (
+      <tr key={strategy?.id || `${skuItem.pedido_id}-${skuItem.sku}`} className="border-b border-gray-100 hover:bg-gray-50">
+        <td className="px-4 py-3 font-mono text-sm font-medium text-[#6B1B8E]">{skuItem.sku || '-'}</td>
+        <td className="px-4 py-3 text-gray-600 max-w-[180px] truncate" title={skuItem.produto}>{skuItem.produto || '-'}</td>
+        <td className="px-4 py-3 text-gray-600 text-center">{skuItem.quantidade || skuItem.item?.quantidade || '-'}</td>
+        <td className="px-4 py-3 text-gray-700 font-medium">{formatCurrency((skuItem.quantidade || skuItem.item?.quantidade || 0) * (skuItem.preco_unitario || skuItem.item?.preco_unitario || 0))}</td>
+        <td className="px-4 py-3 text-gray-500 text-sm">{skuItem.fornecedor || skuItem.pedido?.fornecedor || '-'}</td>
+        <td className="px-4 py-3 text-center">
+          {strategy ? (
+            <button onClick={() => toggleJaVendemos({ pedido_id: strategy.pedido_id, sku: strategy.sku })} className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-all ${strategy.ja_vendemos ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 hover:border-green-400'}`}>
+              {strategy.ja_vendemos && <CheckCircle2 size={14} />}
+            </button>
+          ) : (
+            <span className="text-gray-300 text-xs">-</span>
+          )}
+        </td>
+        {strategy && (
+          <>
+            <td className="px-4 py-3">
+              <div className="flex flex-wrap gap-1">
+                {(strategy.marketplaces_foco || []).map(mp => (
+                  <span key={mp} className="px-2 py-0.5 bg-purple-50 text-purple-700 text-xs rounded-full">{mp}</span>
+                ))}
+              </div>
+            </td>
+            <td className="px-4 py-3">
+              <span className={`px-2 py-1 rounded-full text-xs font-medium ${prioridadeColors[strategy.prioridade] || 'bg-gray-100'}`}>
+                {(strategy.prioridade || 'media').charAt(0).toUpperCase() + (strategy.prioridade || 'media').slice(1)}
+              </span>
+            </td>
+          </>
+        )}
+        <td className="px-4 py-3">
+          <div className="flex gap-1">
+            <button onClick={() => openStrategyModal(strategy ? { ...skuItem, ...(skuItem.item || {}), pedido_id: strategy.pedido_id, sku: strategy.sku, numero_oc: strategy.numero_oc, fornecedor: skuItem.pedido?.fornecedor || skuItem.fornecedor } : skuItem)} className="p-1.5 rounded-lg text-blue-500 hover:text-blue-700 hover:bg-blue-50" title={strategy ? 'Editar Estrategia' : 'Definir Estrategia'}>
+              {strategy ? <Edit2 size={15} /> : <Plus size={15} />}
+            </button>
+            {strategy && strategy.status_marketing !== 'concluido' && (
+              <button onClick={() => advanceStatus(strategy.id)} className="p-1.5 rounded-lg text-green-500 hover:text-green-700 hover:bg-green-50" title="Avancar Status">
+                <ArrowRight size={15} />
+              </button>
+            )}
+          </div>
+        </td>
+      </tr>
+    );
+
+    const counts = {
+      novos: skuNovos.length,
+      planejamento: skuByStatus('em_planejamento').length,
+      execucao: skuByStatus('em_execucao').length,
+      concluidos: skuByStatus('concluido').length
+    };
+
+    return (
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">Marketing</h2>
+            <p className="text-sm text-gray-500 mt-1">Estrategias de marketing para pedidos de fornecedores</p>
+          </div>
+          <button onClick={fetchData} className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200">
+            <RefreshCw size={16} /> Atualizar
+          </button>
+        </div>
+
+        {/* Sub-tabs */}
+        <div className="flex gap-2 bg-white rounded-xl p-1.5 shadow-sm border border-gray-100">
+          {subTabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setMktSubTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${mktSubTab === tab.id ? 'bg-[#6B1B8E] text-white shadow-md' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+            >
+              <tab.icon size={16} />
+              {tab.label}
+              <span className={`ml-1 px-2 py-0.5 rounded-full text-xs ${mktSubTab === tab.id ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                {counts[tab.id]}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-[#6B1B8E] border-t-transparent rounded-full animate-spin" /></div>
+        ) : (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            {/* Pedidos Novos - por SKU */}
+            {mktSubTab === 'novos' && (
+              <>
+                {skuNovos.length === 0 ? (
+                  <div className="text-center py-12 text-gray-400">
+                    <Megaphone size={48} className="mx-auto mb-3 opacity-50" />
+                    <p className="font-medium">Nenhum SKU novo para marketing</p>
+                    <p className="text-sm mt-1">Novos produtos de pedidos de fornecedores aparecerao aqui automaticamente</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">SKU</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Produto</th>
+                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Qtd</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Subtotal</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Fornecedor</th>
+                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Ja Vendemos</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Acoes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {skuNovos.map(item => renderSkuRow(item))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Em Planejamento / Em Execucao / Concluidos - por SKU */}
+            {['planejamento', 'execucao', 'concluidos'].includes(mktSubTab) && (() => {
+              const statusMap = { planejamento: 'em_planejamento', execucao: 'em_execucao', concluidos: 'concluido' };
+              const items = skuByStatus(statusMap[mktSubTab]);
+              return items.length === 0 ? (
+                <div className="text-center py-12 text-gray-400">
+                  <FileText size={48} className="mx-auto mb-3 opacity-50" />
+                  <p className="font-medium">Nenhum SKU {statusLabels[statusMap[mktSubTab]].toLowerCase()}</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">SKU</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Produto</th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Qtd</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Subtotal</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Fornecedor</th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Ja Vendemos</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Marketplaces</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Prioridade</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Acoes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map(s => renderSkuRow(s, s))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Strategy Modal */}
+        {showStrategyModal && selectedSku && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-100">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800">Estrategia de Marketing - {selectedSku.sku}</h3>
+                    <p className="text-sm text-gray-500 mt-1">{selectedSku.produto} | {selectedSku.fornecedor}</p>
+                  </div>
+                  <button onClick={() => setShowStrategyModal(false)} className="p-2 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
+                </div>
+              </div>
+
+              <div className="p-6 space-y-5">
+                {/* SKU details */}
+                <div className="bg-purple-50 rounded-lg p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-purple-700 mb-1">Detalhes do SKU:</p>
+                    <p className="text-sm text-purple-900">{selectedSku.sku}: {selectedSku.produto} | {selectedSku.quantidade}un x R$ {Number(selectedSku.preco_unitario || 0).toFixed(2)} = R$ {((selectedSku.quantidade || 0) * (selectedSku.preco_unitario || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                  <label className="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all bg-white">
+                    <input type="checkbox" className="rounded text-green-500" checked={strategyForm.ja_vendemos} onChange={() => setStrategyForm({ ...strategyForm, ja_vendemos: !strategyForm.ja_vendemos })} />
+                    <span className="text-sm font-medium text-gray-700">Ja vendemos</span>
+                  </label>
+                </div>
+
+                {/* Marketplace Foco */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Marketplace Foco</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {marketplaces.map(mp => (
+                      <label key={mp} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all ${strategyForm.marketplaces_foco.includes(mp) ? 'border-[#6B1B8E] bg-purple-50 text-[#6B1B8E]' : 'border-gray-200 hover:border-gray-300'}`}>
+                        <input type="checkbox" className="rounded text-[#6B1B8E]" checked={strategyForm.marketplaces_foco.includes(mp)} onChange={() => setStrategyForm({ ...strategyForm, marketplaces_foco: toggleArrayItem(strategyForm.marketplaces_foco, mp) })} />
+                        <span className="text-sm">{mp}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Tipo Estrategia */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Tipo de Estrategia</label>
+                  <select value={strategyForm.tipo_estrategia} onChange={e => setStrategyForm({ ...strategyForm, tipo_estrategia: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]">
+                    {tiposEstrategia.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                  </select>
+                </div>
+
+                {/* Acoes Planejadas */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Acoes Planejadas</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {acoesOptions.map(acao => (
+                      <label key={acao} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all ${strategyForm.acoes_planejadas.includes(acao) ? 'border-[#6B1B8E] bg-purple-50 text-[#6B1B8E]' : 'border-gray-200 hover:border-gray-300'}`}>
+                        <input type="checkbox" className="rounded text-[#6B1B8E]" checked={strategyForm.acoes_planejadas.includes(acao)} onChange={() => setStrategyForm({ ...strategyForm, acoes_planejadas: toggleArrayItem(strategyForm.acoes_planejadas, acao) })} />
+                        <span className="text-sm">{acao}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Prioridade + Responsavel */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Prioridade</label>
+                    <select value={strategyForm.prioridade} onChange={e => setStrategyForm({ ...strategyForm, prioridade: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]">
+                      <option value="alta">Alta</option>
+                      <option value="media">Media</option>
+                      <option value="baixa">Baixa</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Responsavel</label>
+                    <input type="text" value={strategyForm.responsavel} onChange={e => setStrategyForm({ ...strategyForm, responsavel: e.target.value })} placeholder="Nome do responsavel" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
+                  </div>
+                </div>
+
+                {/* Deadline */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Deadline</label>
+                  <input type="date" value={strategyForm.deadline} onChange={e => setStrategyForm({ ...strategyForm, deadline: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
+                </div>
+
+                {/* Observacoes */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Observacoes</label>
+                  <textarea value={strategyForm.observacoes} onChange={e => setStrategyForm({ ...strategyForm, observacoes: e.target.value })} rows={3} placeholder="Notas sobre a estrategia..." className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
+                </div>
+              </div>
+
+              <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
+                <button onClick={() => setShowStrategyModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
+                <button onClick={handleSaveStrategy} className="px-6 py-2 bg-[#6B1B8E] text-white rounded-lg hover:bg-[#5a1678] font-medium">Salvar Estrategia</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // 7b. Gestao de Produtos Parados
+  const GestaoAnunciosView = () => {
+    const [products, setProducts] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [showTutorial, setShowTutorial] = useState(false);
+    const [showForm, setShowForm] = useState(false);
+    const [editingProduct, setEditingProduct] = useState(null);
+    const [filter, setFilter] = useState('todos');
+    const emptyForm = { sku: '', produto: '', giro_mensal: '', estoque_atual: '', data_compra: '', projecao_vendas_meses: '', estrategia: '', acao: '', semana_1: '', semana_2: '', semana_3: '', semana_4: '', responsavel: '', status: 'em_analise', observacoes: '' };
+    const [formData, setFormData] = useState({ ...emptyForm });
+
+    const statusOpts = [
+      { value: 'em_analise', label: 'Em Analise', color: 'bg-yellow-100 text-yellow-800' },
+      { value: 'em_acao', label: 'Em Acao', color: 'bg-blue-100 text-blue-800' },
+      { value: 'resolvido', label: 'Resolvido', color: 'bg-green-100 text-green-800' }
+    ];
+    const getStatusStyle = (s) => statusOpts.find(o => o.value === s)?.color || 'bg-gray-100 text-gray-800';
+    const getStatusLabel = (s) => statusOpts.find(o => o.value === s)?.label || s;
+
+    useEffect(() => { loadData(); }, []);
+
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const { data } = await supabase.from('gestao_produtos_parados').select('*').order('created_at', { ascending: false });
+        if (data) setProducts(data);
+      } catch (err) { console.error('Gestao parados fetch error:', err); }
+      setLoading(false);
+    };
+
+    const handleSave = async () => {
+      const payload = {
+        sku: formData.sku,
+        produto: formData.produto,
+        giro_mensal: Number(formData.giro_mensal) || 0,
+        estoque_atual: Number(formData.estoque_atual) || 0,
+        data_compra: formData.data_compra || null,
+        projecao_vendas_meses: Number(formData.projecao_vendas_meses) || null,
+        estrategia: formData.estrategia || null,
+        acao: formData.acao || null,
+        semana_1: formData.semana_1 || null,
+        semana_2: formData.semana_2 || null,
+        semana_3: formData.semana_3 || null,
+        semana_4: formData.semana_4 || null,
+        responsavel: formData.responsavel || null,
+        status: formData.status,
+        observacoes: formData.observacoes || null,
+        updated_at: new Date().toISOString()
+      };
+      try {
+        if (editingProduct) {
+          const { data } = await supabase.from('gestao_produtos_parados').update(payload).eq('id', editingProduct.id).select();
+          if (data) setProducts(prev => prev.map(p => p.id === editingProduct.id ? data[0] : p));
+        } else {
+          const { data } = await supabase.from('gestao_produtos_parados').insert(payload).select();
+          if (data) setProducts(prev => [data[0], ...prev]);
+        }
+      } catch (err) { console.error('Save error:', err); }
+      setShowForm(false);
+      setEditingProduct(null);
+      setFormData({ ...emptyForm });
+    };
+
+    const handleEdit = (product) => {
+      setEditingProduct(product);
+      setFormData({
+        sku: product.sku || '',
+        produto: product.produto || '',
+        giro_mensal: product.giro_mensal || '',
+        estoque_atual: product.estoque_atual || '',
+        data_compra: product.data_compra || '',
+        projecao_vendas_meses: product.projecao_vendas_meses || '',
+        estrategia: product.estrategia || '',
+        acao: product.acao || '',
+        semana_1: product.semana_1 || '',
+        semana_2: product.semana_2 || '',
+        semana_3: product.semana_3 || '',
+        semana_4: product.semana_4 || '',
+        responsavel: product.responsavel || '',
+        status: product.status || 'em_analise',
+        observacoes: product.observacoes || ''
+      });
+      setShowForm(true);
+    };
+
+    const handleDelete = async (id) => {
+      if (!confirm('Remover este produto da gestao?')) return;
+      await supabase.from('gestao_produtos_parados').delete().eq('id', id);
+      setProducts(prev => prev.filter(p => p.id !== id));
+    };
+
+    const counts = {
+      todos: products.length,
+      em_analise: products.filter(p => p.status === 'em_analise').length,
+      em_acao: products.filter(p => p.status === 'em_acao').length,
+      resolvido: products.filter(p => p.status === 'resolvido').length
+    };
+
+    const displayList = filter === 'todos' ? products : products.filter(p => p.status === filter);
+    const formatDate = (d) => d ? new Date(d).toLocaleDateString('pt-BR') : '-';
+
+    return (
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">Gestao de Produtos Parados</h2>
+            <p className="text-sm text-gray-500 mt-1">Acompanhe acoes em produtos com baixo giro ou parados</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setShowTutorial(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 border border-blue-200">
+              <Info size={16} /> Tutorial de Uso
+            </button>
+            <button onClick={() => { setEditingProduct(null); setFormData({ ...emptyForm }); setShowForm(true); }} className="flex items-center gap-2 px-4 py-2 bg-[#6B1B8E] text-white rounded-lg hover:bg-[#5a1678]">
+              <Plus size={16} /> Adicionar Produto
+            </button>
+          </div>
+        </div>
+
+        {/* Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <button onClick={() => setFilter('todos')} className={`p-4 rounded-xl border transition-all text-left ${filter === 'todos' ? 'border-[#6B1B8E] bg-purple-50 shadow-md' : 'border-gray-100 bg-white hover:border-gray-300'}`}>
+            <p className="text-3xl font-bold text-gray-800">{counts.todos}</p>
+            <p className="text-sm text-gray-500 mt-1">Total</p>
+          </button>
+          <button onClick={() => setFilter('em_analise')} className={`p-4 rounded-xl border transition-all text-left ${filter === 'em_analise' ? 'border-yellow-400 bg-yellow-50 shadow-md' : 'border-gray-100 bg-white hover:border-gray-300'}`}>
+            <p className="text-3xl font-bold text-yellow-600">{counts.em_analise}</p>
+            <p className="text-sm text-gray-500 mt-1">Em Analise</p>
+          </button>
+          <button onClick={() => setFilter('em_acao')} className={`p-4 rounded-xl border transition-all text-left ${filter === 'em_acao' ? 'border-blue-400 bg-blue-50 shadow-md' : 'border-gray-100 bg-white hover:border-gray-300'}`}>
+            <p className="text-3xl font-bold text-blue-600">{counts.em_acao}</p>
+            <p className="text-sm text-gray-500 mt-1">Em Acao</p>
+          </button>
+          <button onClick={() => setFilter('resolvido')} className={`p-4 rounded-xl border transition-all text-left ${filter === 'resolvido' ? 'border-green-400 bg-green-50 shadow-md' : 'border-gray-100 bg-white hover:border-gray-300'}`}>
+            <p className="text-3xl font-bold text-green-600">{counts.resolvido}</p>
+            <p className="text-sm text-gray-500 mt-1">Resolvidos</p>
+          </button>
+        </div>
+
+        {/* Products Table */}
+        {loading ? (
+          <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-[#6B1B8E] border-t-transparent rounded-full animate-spin" /></div>
+        ) : displayList.length === 0 ? (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center text-gray-400">
+            <Target size={48} className="mx-auto mb-3 opacity-50" />
+            <p className="font-medium text-gray-600">Nenhum produto cadastrado</p>
+            <p className="text-sm mt-2">Clique em "Adicionar Produto" para comecar a acompanhar produtos parados.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {displayList.map(item => (
+              <div key={item.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-sm font-bold text-[#6B1B8E] bg-purple-50 px-3 py-1 rounded-lg">{item.sku}</span>
+                    <span className="font-medium text-gray-800">{item.produto || '-'}</span>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusStyle(item.status)}`}>{getStatusLabel(item.status)}</span>
+                    {item.estrategia && (
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${item.estrategia === 'queima' ? 'bg-red-100 text-red-700' : 'bg-teal-100 text-teal-700'}`}>
+                        {item.estrategia === 'queima' ? 'Queima' : 'Reintroducao'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-1">
+                    <button onClick={() => handleEdit(item)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg" title="Editar"><Edit2 size={15} /></button>
+                    <button onClick={() => handleDelete(item.id)} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg" title="Remover"><Trash2 size={15} /></button>
+                  </div>
+                </div>
+
+                {(() => {
+                  const vendaSemanas = [item.semana_1, item.semana_2, item.semana_3, item.semana_4].map(s => Number(s) || 0);
+                  const totalVendido = vendaSemanas.reduce((a, b) => a + b, 0);
+                  const semanasPreenchidas = vendaSemanas.filter(v => v > 0).length;
+                  const estoqueAtualizado = (item.estoque_atual || 0) - totalVendido;
+                  const giroSemanal = semanasPreenchidas > 0 ? totalVendido / semanasPreenchidas : 0;
+                  const giroMensalAtualizado = semanasPreenchidas > 0 ? Math.round(giroSemanal * 4 * 10) / 10 : Number(item.giro_mensal) || 0;
+                  const projecaoAtualizada = giroMensalAtualizado > 0 ? Math.round(estoqueAtualizado / giroMensalAtualizado * 10) / 10 : Number(item.projecao_vendas_meses) || 0;
+
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-3">
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase font-semibold">Giro Mensal {semanasPreenchidas > 0 ? '(atualizado)' : '(inicial)'}</p>
+                          <p className="text-sm font-medium text-gray-700">{giroMensalAtualizado} un/mes</p>
+                          {semanasPreenchidas > 0 && Number(item.giro_mensal) > 0 && <p className="text-xs text-gray-400 line-through">{item.giro_mensal} un/mes</p>}
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase font-semibold">Estoque {totalVendido > 0 ? 'Atualizado' : 'Atual'}</p>
+                          <p className={`text-sm font-bold ${estoqueAtualizado < 10 ? 'text-red-600' : 'text-gray-700'}`}>{estoqueAtualizado} un</p>
+                          {totalVendido > 0 && <p className="text-xs text-gray-400 line-through">{item.estoque_atual} un</p>}
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase font-semibold">Data Compra</p>
+                          <p className="text-sm font-medium text-gray-700">{formatDate(item.data_compra)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase font-semibold">Projecao {semanasPreenchidas > 0 ? '(atualizada)' : ''}</p>
+                          <p className={`text-sm font-bold ${projecaoAtualizada > 12 ? 'text-red-600' : projecaoAtualizada > 6 ? 'text-yellow-600' : 'text-green-600'}`}>{projecaoAtualizada > 0 ? `${projecaoAtualizada} meses` : '-'}</p>
+                          {semanasPreenchidas > 0 && Number(item.projecao_vendas_meses) > 0 && <p className="text-xs text-gray-400 line-through">{item.projecao_vendas_meses} meses</p>}
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase font-semibold">Responsavel</p>
+                          <p className="text-sm font-medium text-gray-700">{item.responsavel || '-'}</p>
+                        </div>
+                      </div>
+
+                      {item.acao && (
+                        <div className="mb-3 bg-blue-50 rounded-lg p-3">
+                          <p className="text-xs text-blue-500 uppercase font-semibold mb-1">Acao Tomada</p>
+                          <p className="text-sm text-blue-800">{item.acao}</p>
+                        </div>
+                      )}
+
+                      {/* Weekly Tracking */}
+                      <div className="grid grid-cols-4 gap-2">
+                        {['semana_1', 'semana_2', 'semana_3', 'semana_4'].map((sem, idx) => {
+                          const val = Number(item[sem]) || 0;
+                          const filled = val > 0;
+                          return (
+                            <div key={sem} className={`rounded-lg p-2.5 text-center border ${filled ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-100'}`}>
+                              <p className="text-xs font-semibold text-gray-500">Semana {idx + 1}</p>
+                              {filled ? (
+                                <p className="text-lg font-bold text-green-700 mt-1">{val} <span className="text-xs font-normal">un</span></p>
+                              ) : (
+                                <p className="text-xs mt-2 text-gray-300">Aguardando</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {totalVendido > 0 && (
+                        <div className="mt-2 flex items-center gap-4 text-xs">
+                          <span className="text-green-600 font-semibold">Total vendido: {totalVendido} un em {semanasPreenchidas} semana{semanasPreenchidas > 1 ? 's' : ''}</span>
+                          <span className="text-gray-400">|</span>
+                          <span className="text-gray-500">Media: {Math.round(totalVendido / semanasPreenchidas * 10) / 10} un/semana</span>
+                        </div>
+                      )}
+
+                      {item.observacoes && (
+                        <div className="mt-3 text-xs text-gray-400"><span className="font-semibold">Obs:</span> {item.observacoes}</div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Tutorial Modal */}
+        {showTutorial && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center"><Info size={20} className="text-blue-600" /></div>
+                  <h3 className="text-lg font-bold text-gray-800">Tutorial - Gestao de Produtos Parados</h3>
+                </div>
+                <button onClick={() => setShowTutorial(false)} className="p-2 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
+              </div>
+              <div className="p-6 space-y-5">
+                <div className="bg-purple-50 rounded-xl p-4">
+                  <h4 className="font-bold text-[#6B1B8E] mb-2">Objetivo</h4>
+                  <p className="text-sm text-gray-700">Acompanhar e tomar acoes sobre produtos com baixo giro ou parados, garantindo que nenhum produto fique encalhado sem uma estrategia definida.</p>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded-full bg-[#6B1B8E] text-white flex items-center justify-center text-sm font-bold shrink-0">1</div>
+                    <div>
+                      <h5 className="font-semibold text-gray-800">Identificar o Produto</h5>
+                      <p className="text-sm text-gray-600 mt-1">Escolha qual SKU sera analisado. Priorize produtos com alto estoque e baixo giro.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded-full bg-[#6B1B8E] text-white flex items-center justify-center text-sm font-bold shrink-0">2</div>
+                    <div>
+                      <h5 className="font-semibold text-gray-800">Puxar Historico de Vendas (60 dias)</h5>
+                      <p className="text-sm text-gray-600 mt-1">No BaseLinker, consulte o historico de vendas dos ultimos 60 dias do produto. Anote a quantidade vendida no periodo para calcular o giro mensal.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded-full bg-[#6B1B8E] text-white flex items-center justify-center text-sm font-bold shrink-0">3</div>
+                    <div>
+                      <h5 className="font-semibold text-gray-800">Verificar Estoque Atual</h5>
+                      <p className="text-sm text-gray-600 mt-1">Consulte o estoque atual do produto no BaseLinker (inventario SNIFF 39104).</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded-full bg-[#6B1B8E] text-white flex items-center justify-center text-sm font-bold shrink-0">4</div>
+                    <div>
+                      <h5 className="font-semibold text-gray-800">Calcular Projecao</h5>
+                      <p className="text-sm text-gray-600 mt-1">Divida o estoque atual pelo giro mensal para saber quantos meses o produto ficara parado sem acao. <strong>Ex: 180 un / 6 un/mes = 30 meses.</strong></p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded-full bg-[#6B1B8E] text-white flex items-center justify-center text-sm font-bold shrink-0">5</div>
+                    <div>
+                      <h5 className="font-semibold text-gray-800">Escolher Estrategia</h5>
+                      <p className="text-sm text-gray-600 mt-1">Defina se a estrategia e de <strong>Queima</strong> (eliminar o estoque de vez, via promocao agressiva, kit, liquidacao) ou <strong>Reintroducao</strong> (avaliar se vale a pena voltar a trabalhar o produto com nova estrategia de vendas).</p>
+                      <div className="flex gap-2 mt-2">
+                        <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">Queima = Eliminar estoque</span>
+                        <span className="px-2 py-1 bg-teal-100 text-teal-700 rounded-full text-xs font-medium">Reintroducao = Avaliar potencial</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded-full bg-[#6B1B8E] text-white flex items-center justify-center text-sm font-bold shrink-0">6</div>
+                    <div>
+                      <h5 className="font-semibold text-gray-800">Definir Acao</h5>
+                      <p className="text-sm text-gray-600 mt-1">Defina que acao sera tomada para acelerar as vendas. Exemplos: Enviar ao FULL, criar catalogo, campanha de ads, baixar preco, enviar a novo marketplace.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded-full bg-[#6B1B8E] text-white flex items-center justify-center text-sm font-bold shrink-0">7</div>
+                    <div>
+                      <h5 className="font-semibold text-gray-800">Acompanhamento Semanal</h5>
+                      <p className="text-sm text-gray-600 mt-1">Toda semana, preencha o resultado da acao (vendas, visualizacoes, performance). O responsavel deve atualizar as semanas 1, 2, 3 e 4 com os resultados.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-yellow-50 rounded-xl p-4 border border-yellow-200">
+                  <h4 className="font-bold text-yellow-700 mb-2">Dica: Relatorio Diario</h4>
+                  <p className="text-sm text-gray-700">O ideal e alimentar o relatorio todo dia (tarefa do estagiario). Use o ChatGPT dos funcionarios para analisar os dados de vendas e gerar insights sobre cada produto.</p>
+                </div>
+
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <h4 className="font-bold text-gray-700 mb-2">Exemplo Preenchido</h4>
+                  <div className="text-sm text-gray-600 space-y-1 font-mono">
+                    <p><strong>SKU:</strong> GL7309</p>
+                    <p><strong>Produto:</strong> Copo De Caipirinha 300ml De Vidro</p>
+                    <p><strong>Giro Mensal:</strong> 6 un (1 Jogo) nos ultimos 30 dias</p>
+                    <p><strong>Projecao:</strong> 30 Meses</p>
+                    <p><strong>Estrategia:</strong> Reintroducao (avaliar se vale voltar com nova estrategia)</p>
+                    <p><strong>Acao:</strong> Enviado ao FULL da Romobr em Catalogo no ML com media de 50 vendas/mes</p>
+                    <p><strong>Responsavel:</strong> Natalya</p>
+                  </div>
+                </div>
+              </div>
+              <div className="p-6 border-t border-gray-100 flex justify-end">
+                <button onClick={() => setShowTutorial(false)} className="px-6 py-2 bg-[#6B1B8E] text-white rounded-lg hover:bg-[#5a1678] font-medium">Entendi!</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Add/Edit Form Modal */}
+        {showForm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-gray-800">{editingProduct ? 'Editar Produto' : 'Adicionar Produto Parado'}</h3>
+                <button onClick={() => { setShowForm(false); setEditingProduct(null); }} className="p-2 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">SKU *</label>
+                    <input type="text" value={formData.sku} onChange={e => setFormData({ ...formData, sku: e.target.value })} placeholder="Ex: GL7309" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Produto</label>
+                    <input type="text" value={formData.produto} onChange={e => setFormData({ ...formData, produto: e.target.value })} placeholder="Nome do produto" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Giro Mensal (un)</label>
+                    <input type="number" value={formData.giro_mensal} onChange={e => setFormData({ ...formData, giro_mensal: e.target.value })} placeholder="6" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Estoque Atual (un)</label>
+                    <input type="number" value={formData.estoque_atual} onChange={e => setFormData({ ...formData, estoque_atual: e.target.value })} placeholder="180" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Projecao (meses)</label>
+                    <input type="number" value={formData.projecao_vendas_meses} onChange={e => setFormData({ ...formData, projecao_vendas_meses: e.target.value })} placeholder="30" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Data da Compra</label>
+                    <input type="date" value={formData.data_compra} onChange={e => setFormData({ ...formData, data_compra: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Status</label>
+                    <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]">
+                      {statusOpts.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Estrategia</label>
+                  <div className="flex gap-3">
+                    <button type="button" onClick={() => setFormData({ ...formData, estrategia: 'queima' })} className={`flex-1 px-4 py-3 rounded-lg border-2 text-sm font-medium transition-all ${formData.estrategia === 'queima' ? 'border-red-400 bg-red-50 text-red-700' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'}`}>
+                      <span className="text-lg">🔥</span>
+                      <p className="font-bold mt-1">Queima</p>
+                      <p className="text-xs mt-0.5 opacity-75">Eliminar do estoque</p>
+                    </button>
+                    <button type="button" onClick={() => setFormData({ ...formData, estrategia: 'reintroducao' })} className={`flex-1 px-4 py-3 rounded-lg border-2 text-sm font-medium transition-all ${formData.estrategia === 'reintroducao' ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'}`}>
+                      <span className="text-lg">🔄</span>
+                      <p className="font-bold mt-1">Reintroducao</p>
+                      <p className="text-xs mt-0.5 opacity-75">Avaliar se vale voltar</p>
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Acao Tomada</label>
+                  <textarea value={formData.acao} onChange={e => setFormData({ ...formData, acao: e.target.value })} rows={2} placeholder="Ex: Enviado ao FULL da Romobr em um Catalogo no ML com media de 50 vendas/mes" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Acompanhamento Semanal (qtd vendida)</label>
+                  <div className="grid grid-cols-4 gap-3">
+                    {[1, 2, 3, 4].map(n => (
+                      <div key={n}>
+                        <label className="block text-xs text-gray-500 mb-1">Semana {n}</label>
+                        <input type="number" min="0" value={formData[`semana_${n}`]} onChange={e => setFormData({ ...formData, [`semana_${n}`]: e.target.value })} placeholder="0" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-center focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
+                      </div>
+                    ))}
+                  </div>
+                  {(() => {
+                    const sv = [1,2,3,4].map(n => Number(formData[`semana_${n}`]) || 0);
+                    const tot = sv.reduce((a,b) => a+b, 0);
+                    const weeks = sv.filter(v => v > 0).length;
+                    const est = (Number(formData.estoque_atual) || 0) - tot;
+                    const giroS = weeks > 0 ? tot / weeks : 0;
+                    const giroM = weeks > 0 ? Math.round(giroS * 4 * 10) / 10 : Number(formData.giro_mensal) || 0;
+                    const proj = giroM > 0 ? Math.round(est / giroM * 10) / 10 : 0;
+                    return tot > 0 ? (
+                      <div className="mt-2 p-3 bg-green-50 rounded-lg border border-green-200 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="text-green-700 font-semibold">Vendido: {tot} un em {weeks} semana{weeks > 1 ? 's' : ''}</span>
+                          <span className="text-green-600">Estoque ajustado: {est} un</span>
+                        </div>
+                        <div className="flex items-center justify-between mt-1">
+                          <span className="text-gray-600">Novo giro: {giroM} un/mes</span>
+                          <span className={`font-bold ${proj > 12 ? 'text-red-600' : proj > 6 ? 'text-yellow-600' : 'text-green-600'}`}>Projecao: {proj > 0 ? `${proj} meses` : '-'}</span>
+                        </div>
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Responsavel</label>
+                    <input type="text" value={formData.responsavel} onChange={e => setFormData({ ...formData, responsavel: e.target.value })} placeholder="Nome do responsavel" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Observacoes</label>
+                    <input type="text" value={formData.observacoes} onChange={e => setFormData({ ...formData, observacoes: e.target.value })} placeholder="Notas adicionais" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
+                  </div>
+                </div>
+              </div>
+              <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
+                <button onClick={() => { setShowForm(false); setEditingProduct(null); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
+                <button onClick={handleSave} disabled={!formData.sku} className="px-6 py-2 bg-[#6B1B8E] text-white rounded-lg hover:bg-[#5a1678] font-medium disabled:opacity-50 disabled:cursor-not-allowed">Salvar</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // 8. Fulfillment View
+  const FulfillmentView = () => {
+    const [envios, setEnvios] = useState([]);
+    const [showForm, setShowForm] = useState(false);
+    const [editingEnvio, setEditingEnvio] = useState(null);
+    const [activeFilter, setActiveFilter] = useState('todos');
+    const emptyForm = { numero_envio: '', marketplace: '', skus: '', quantidade: '', custo_envio: '', custo_obs: '', data_criacao: '', data_coleta: '', status: 'em_aberto', observacoes: '' };
+    const [formData, setFormData] = useState({ ...emptyForm });
+
+    useEffect(() => {
+      const load = async () => {
+        const { data } = await supabase.from('fulfillment_envios').select('*').order('data_criacao', { ascending: false });
+        if (data) setEnvios(data);
+      };
+      load();
+    }, []);
+
+    const handleSave = async () => {
+      const payload = {
+        numero_envio: formData.numero_envio,
+        marketplace: formData.marketplace,
+        skus: formData.skus ? formData.skus.split(',').map(s => s.trim()).filter(Boolean) : [],
+        quantidade: Number(formData.quantidade) || 0,
+        custo_envio: formData.custo_envio ? Number(formData.custo_envio) : null,
+        custo_obs: formData.custo_obs || null,
+        data_criacao: formData.data_criacao || null,
+        data_coleta: formData.data_coleta || null,
+        status: formData.status,
+        observacoes: formData.observacoes || null,
+      };
+
+      if (editingEnvio) {
+        const { data } = await supabase.from('fulfillment_envios').update(payload).eq('id', editingEnvio.id).select();
+        if (data) setEnvios(prev => prev.map(e => e.id === editingEnvio.id ? data[0] : e));
+      } else {
+        const { data } = await supabase.from('fulfillment_envios').insert(payload).select();
+        if (data) setEnvios(prev => [data[0], ...prev]);
+      }
+      setShowForm(false);
+      setEditingEnvio(null);
+      setFormData({ ...emptyForm });
+    };
+
+    const handleEdit = (envio) => {
+      setEditingEnvio(envio);
+      setFormData({
+        numero_envio: envio.numero_envio || '',
+        marketplace: envio.marketplace || '',
+        skus: (envio.skus || []).join(', '),
+        quantidade: envio.quantidade || '',
+        custo_envio: envio.custo_envio || '',
+        custo_obs: envio.custo_obs || '',
+        data_criacao: envio.data_criacao || '',
+        data_coleta: envio.data_coleta || '',
+        status: envio.status || 'em_aberto',
+        observacoes: envio.observacoes || '',
+      });
+      setShowForm(true);
+    };
+
+    const handleDelete = async (envio) => {
+      if (!confirm(`Excluir envio ${envio.numero_envio}?`)) return;
+      await supabase.from('fulfillment_envios').delete().eq('id', envio.id);
+      setEnvios(prev => prev.filter(e => e.id !== envio.id));
+    };
+
+    const handleStatusChange = async (envio, newStatus) => {
+      const updates = { status: newStatus };
+      if (newStatus === 'coletado' && !envio.data_coleta) updates.data_coleta = new Date().toISOString().split('T')[0];
+      const { data } = await supabase.from('fulfillment_envios').update(updates).eq('id', envio.id).select();
+      if (data) setEnvios(prev => prev.map(e => e.id === envio.id ? data[0] : e));
+    };
+
+    const filtered = envios.filter(e => {
+      if (activeFilter === 'todos') return true;
+      return e.status === activeFilter;
+    });
+
+    const stats = {
+      total: envios.length,
+      aberto: envios.filter(e => e.status === 'em_aberto').length,
+      coletado: envios.filter(e => e.status === 'coletado').length,
+      problema: envios.filter(e => e.status === 'problema').length,
+      custoTotal: envios.reduce((s, e) => s + (Number(e.custo_envio) || 0), 0),
+      unidadesTotal: envios.reduce((s, e) => s + (Number(e.quantidade) || 0), 0),
+    };
+
+    const statusColors = {
+      em_aberto: 'bg-yellow-100 text-yellow-800',
+      coletado: 'bg-green-100 text-green-800',
+      problema: 'bg-red-100 text-red-800',
+    };
+    const statusLabels = { em_aberto: 'Em Aberto', coletado: 'Coletado', problema: 'Problema' };
+
+    const marketplaces = ['Mercado Livre Sniff', 'Mercado Livre Romo', 'Amazon', 'Amazon Casa', 'Amazon Inovate', 'Shopee', 'Shopee Casa', 'Shopee Romo', 'Shein', 'Shein Casa', 'Shein Romo', 'Shein Sniff', 'Outro'];
+
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">Fulfillment</h1>
+            <p className="text-gray-500">Controle de envios Full com custos</p>
+          </div>
+          <button onClick={() => { setEditingEnvio(null); setFormData({ ...emptyForm }); setShowForm(true); }} className="flex items-center gap-2 px-4 py-2 text-white rounded-xl" style={{ backgroundColor: COLORS.purple }}>
+            <Plus size={18} /> Novo Envio
+          </button>
+        </div>
+
+        {/* KPIs */}
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+          {[
+            { label: 'Total Envios', value: stats.total, color: COLORS.purple },
+            { label: 'Em Aberto', value: stats.aberto, color: '#EAB308' },
+            { label: 'Coletados', value: stats.coletado, color: '#22C55E' },
+            { label: 'Problemas', value: stats.problema, color: '#EF4444' },
+            { label: 'Custo Total', value: `R$ ${stats.custoTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, color: COLORS.gold },
+            { label: 'Unidades', value: stats.unidadesTotal.toLocaleString('pt-BR'), color: '#3B82F6' },
+          ].map((kpi, i) => (
+            <div key={i} className="bg-white rounded-2xl shadow-md p-4 text-center">
+              <p className="text-xs text-gray-500 uppercase">{kpi.label}</p>
+              <p className="text-xl font-bold mt-1" style={{ color: kpi.color }}>{kpi.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Filters */}
+        <div className="flex gap-2">
+          {[
+            { key: 'todos', label: `Todos ${stats.total}` },
+            { key: 'em_aberto', label: `Em Aberto ${stats.aberto}` },
+            { key: 'coletado', label: `Coletados ${stats.coletado}` },
+            { key: 'problema', label: `Problemas ${stats.problema}` },
+          ].map(f => (
+            <button key={f.key} onClick={() => setActiveFilter(f.key)}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${activeFilter === f.key ? 'text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              style={activeFilter === f.key ? { backgroundColor: COLORS.purple } : {}}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Table */}
+        <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="text-left text-xs font-semibold text-white uppercase" style={{ backgroundColor: COLORS.purple }}>
+                  <th className="px-4 py-3">ID Envio</th>
+                  <th className="px-4 py-3">Marketplace</th>
+                  <th className="px-4 py-3">Produtos Enviados</th>
+                  <th className="px-4 py-3">Qtd</th>
+                  <th className="px-4 py-3">Custo Envio</th>
+                  <th className="px-4 py-3">Data Criacao</th>
+                  <th className="px-4 py-3">Data Coleta</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Acoes</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filtered.length === 0 ? (
+                  <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">Nenhum envio encontrado</td></tr>
+                ) : filtered.map(envio => (
+                  <tr key={envio.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-sm" style={{ color: COLORS.purple }}>{envio.numero_envio}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700">{envio.marketplace}</td>
+                    <td className="px-4 py-3 text-sm">
+                      <div className="flex flex-wrap gap-1">
+                        {(envio.skus || []).map((sku, i) => (
+                          <span key={i} className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded text-xs font-medium">{sku}</span>
+                        ))}
+                        {(!envio.skus || envio.skus.length === 0) && <span className="text-gray-400">-</span>}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm font-medium text-gray-700">{envio.quantidade?.toLocaleString('pt-BR') || '-'}</td>
+                    <td className="px-4 py-3 text-sm">
+                      {envio.custo_envio ? (
+                        <span className="font-medium text-gray-700">R$ {Number(envio.custo_envio).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      ) : (
+                        <span className="text-xs text-gray-400 italic">{envio.custo_obs || '-'}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{envio.data_criacao ? new Date(envio.data_criacao + 'T12:00:00').toLocaleDateString('pt-BR') : '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{envio.data_coleta ? new Date(envio.data_coleta + 'T12:00:00').toLocaleDateString('pt-BR') : '-'}</td>
+                    <td className="px-4 py-3">
+                      <select value={envio.status} onChange={e => handleStatusChange(envio, e.target.value)}
+                        className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer ${statusColors[envio.status] || 'bg-gray-100'}`}>
+                        <option value="em_aberto">Em Aberto</option>
+                        <option value="coletado">Coletado</option>
+                        <option value="problema">Problema</option>
+                      </select>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1">
+                        <button onClick={() => handleEdit(envio)} className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100" title="Editar"><Edit2 size={15} /></button>
+                        <button onClick={() => handleDelete(envio)} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50" title="Excluir"><Trash2 size={15} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* New/Edit Modal */}
+        {showForm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between p-6 border-b">
+                <h3 className="text-lg font-bold text-gray-800">{editingEnvio ? 'Editar Envio' : 'Novo Envio Full'}</h3>
+                <button onClick={() => { setShowForm(false); setEditingEnvio(null); }} className="p-1 rounded-lg hover:bg-gray-100"><X size={20} /></button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">ID do Envio *</label>
+                    <input type="text" value={formData.numero_envio} onChange={e => setFormData({ ...formData, numero_envio: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" placeholder="Ex: #60811477" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Marketplace *</label>
+                    <select value={formData.marketplace} onChange={e => setFormData({ ...formData, marketplace: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200">
+                      <option value="">Selecionar...</option>
+                      {marketplaces.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Codigos dos Produtos Enviados (separados por virgula)</label>
+                  <input type="text" value={formData.skus} onChange={e => setFormData({ ...formData, skus: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" placeholder="Ex: CK6482, CK6198, SNF-100, SNFKIT-200" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Quantidade (un)</label>
+                    <input type="number" value={formData.quantidade} onChange={e => setFormData({ ...formData, quantidade: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" placeholder="0" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Custo Envio (R$)</label>
+                    <input type="number" step="0.01" value={formData.custo_envio} onChange={e => setFormData({ ...formData, custo_envio: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" placeholder="0.00" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Obs. Custo (se nao tem valor)</label>
+                  <input type="text" value={formData.custo_obs} onChange={e => setFormData({ ...formData, custo_obs: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" placeholder="Ex: frete gratis, envio proprio" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Data Criacao Full</label>
+                    <input type="date" value={formData.data_criacao} onChange={e => setFormData({ ...formData, data_criacao: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Data Coleta</label>
+                    <input type="date" value={formData.data_coleta} onChange={e => setFormData({ ...formData, data_coleta: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200">
+                    <option value="em_aberto">Em Aberto</option>
+                    <option value="coletado">Coletado</option>
+                    <option value="problema">Problema</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Observacoes</label>
+                  <textarea value={formData.observacoes} onChange={e => setFormData({ ...formData, observacoes: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" rows={2} placeholder="Observacoes adicionais..." />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 p-6 border-t">
+                <button onClick={() => { setShowForm(false); setEditingEnvio(null); }} className="px-4 py-2 text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200">Cancelar</button>
+                <button onClick={handleSave} disabled={!formData.numero_envio || !formData.marketplace} className="px-4 py-2 text-white rounded-xl disabled:opacity-50" style={{ backgroundColor: COLORS.purple }}>
+                  {editingEnvio ? 'Salvar Alteracoes' : 'Criar Envio'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Analise de Vendas Module
+  const AnaliseVendasView = () => {
+    const [reports, setReports] = useState([]);
+    const [loadingReports, setLoadingReports] = useState(true);
+    const [selectedReport, setSelectedReport] = useState(null);
+    const [error, setError] = useState(null);
+
+    const MONTH_NAMES = ['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+    useEffect(() => {
+      loadReports();
+    }, []);
+
+    const loadReports = async () => {
+      setLoadingReports(true);
+      try {
+        const baseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://shaohvrqjimlodzroazt.supabase.co';
+        const indexUrl = `${baseUrl}/storage/v1/object/public/reports/index.json`;
+        const resp = await fetch(indexUrl);
+        if (!resp.ok) throw new Error('index.json not found');
+        const index = await resp.json();
+        const pdfs = index.filter(f => f.name.endsWith('.pdf')).map(f => {
+          const match = f.name.match(/Relatorio_Sniff_(\d{4})-(\d{2})-(\d{2})/);
+          return {
+            ...f, date: match ? `${match[3]}/${match[2]}/${match[1]}` : f.name,
+            dateSort: match ? `${match[1]}-${match[2]}-${match[3]}` : f.date || '',
+            month: match ? MONTH_NAMES[parseInt(match[2]) - 1] : '',
+            year: match ? match[1] : '',
+            url: `${baseUrl}/storage/v1/object/public/reports/${f.name}`,
+          };
+        }).sort((a, b) => b.dateSort.localeCompare(a.dateSort));
+        setReports(pdfs);
+        if (pdfs.length > 0) setSelectedReport(pdfs[0]);
+      } catch (e) {
+        setError('Nenhum relatorio encontrado. O Agente SNIFF criara o index automaticamente no proximo upload.');
+        console.error(e);
+      }
+      setLoadingReports(false);
+    };
+
+    const formatBytes = (bytes) => {
+      if (!bytes) return '-';
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / 1048576).toFixed(1) + ' MB';
+    };
+
+    if (loadingReports) return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 text-purple-600 animate-spin mx-auto mb-3" />
+          <p className="text-gray-500">Carregando relatorios...</p>
+        </div>
+      </div>
+    );
+
+    return (
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-[#6B1B8E] to-[#4A1063] rounded-2xl p-6 text-white">
+          <div className="flex items-center gap-3 mb-2">
+            <TrendingUp size={28} />
+            <h2 className="text-2xl font-bold">Analise de Vendas</h2>
+          </div>
+          <p className="text-purple-200">Relatorios diarios gerados automaticamente pelo Agente SNIFF</p>
+        </div>
+
+        {error && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex items-center gap-3">
+            <AlertCircle className="text-yellow-600" size={20} />
+            <div>
+              <p className="font-semibold text-yellow-800">Configuracao Pendente</p>
+              <p className="text-sm text-yellow-700">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {reports.length === 0 && !error ? (
+          <div className="bg-white rounded-2xl p-12 text-center shadow-sm">
+            <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-bold text-gray-600 mb-2">Nenhum relatorio disponivel</h3>
+            <p className="text-gray-400">Os relatorios serao gerados automaticamente pelo Agente SNIFF diariamente as 07:30.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left: Report list */}
+            <div className="lg:col-span-1 space-y-3">
+              <h3 className="font-bold text-gray-700 flex items-center gap-2">
+                <Calendar size={18} /> Relatorios Disponiveis ({reports.length})
+              </h3>
+              <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
+                {reports.map((r) => (
+                  <button
+                    key={r.name}
+                    onClick={() => setSelectedReport(r)}
+                    className={`w-full text-left p-4 rounded-xl border transition-all ${
+                      selectedReport?.name === r.name
+                        ? 'border-[#6B1B8E] bg-purple-50 shadow-md'
+                        : 'border-gray-200 bg-white hover:border-purple-300 hover:shadow-sm'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-bold text-gray-800">{r.date}</p>
+                        <p className="text-xs text-gray-500">{r.month} {r.year}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-400">{formatBytes(r.metadata?.size)}</p>
+                        <FileText size={16} className="text-purple-400 ml-auto mt-1" />
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Right: PDF viewer */}
+            <div className="lg:col-span-2">
+              {selectedReport && (
+                <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                  <div className="bg-gray-50 p-4 flex items-center justify-between border-b">
+                    <div>
+                      <h3 className="font-bold text-gray-800">Relatorio {selectedReport.date}</h3>
+                      <p className="text-sm text-gray-500">{selectedReport.name}</p>
+                    </div>
+                    <a
+                      href={selectedReport.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-4 py-2 bg-[#6B1B8E] text-white rounded-xl text-sm font-bold hover:bg-[#4A1063] transition-all"
+                    >
+                      <Download size={16} /> Baixar PDF
+                    </a>
+                  </div>
+                  <iframe
+                    src={selectedReport.url}
+                    className="w-full border-0"
+                    style={{ height: '700px' }}
+                    title={`Relatorio ${selectedReport.date}`}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Route renderer
   const renderContent = () => {
     switch (activeTab) {
@@ -4009,7 +5609,11 @@ const App = () => {
       case 'analytics': return <AnalyticsView />;
       case 'times': return <TimesView />;
       case 'pedidos': return <PedidoFornecedorView />;
+      case 'marketing': return <MarketingView />;
+      case 'gestao_anuncios': return <GestaoAnunciosView />;
+      case 'fulfillment': return <FulfillmentView />;
       case 'precificacao': return <PrecificacaoView />;
+      case 'analisevendas': return <AnaliseVendasView />;
       case 'admin': return <AdminPanel />;
       default: return <DashboardView />;
     }
@@ -4063,7 +5667,7 @@ const App = () => {
             >
               <Menu size={24} />
             </button>
-            <h1 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('aguamarinha', 'Agua Marinha')}</h1>
+            <h1 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('aguamarinha', 'Agua Marinha').replace('gestao_anuncios', 'Gestao de Produtos Parados').replace('analisevendas', 'Analise de Vendas')}</h1>
           </div>
 
           <div className="flex items-center gap-6">
