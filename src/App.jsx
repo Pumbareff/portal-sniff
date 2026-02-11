@@ -767,7 +767,6 @@ const App = () => {
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard' },
       { id: 'academy', label: 'Sniff Academy', icon: GraduationCap, permission: 'academy' },
       { id: 'recebimento', label: 'Recebimento', icon: Package, permission: 'recebimento' },
-      { id: 'aguamarinha', label: 'Agua Marinha', icon: Droplets, permission: 'agua_marinha' },
       { id: 'vendedor', label: 'Area Vendedor', icon: ClipboardList, permission: 'vendedor' },
       { id: 'analytics', label: 'Analytics', icon: BarChart3, permission: 'analytics' },
       { id: 'times', label: 'Gestao de Times', icon: Users, permission: 'times' },
@@ -800,10 +799,10 @@ const App = () => {
 
         <nav className="mt-6 px-3 space-y-1">
           {navItems.map((item) => {
-            const marketingChildren = ['marketing', 'gestao_anuncios', 'oportunidades'];
+            const marketingChildren = ['marketing', 'gestao_anuncios', 'oportunidades', 'aguamarinha'];
             const isMarketingGroup = item.id === 'marketing';
             const isMarketingExpanded = isMarketingGroup && marketingChildren.includes(activeTab);
-            const isActive = activeTab === item.id || (isMarketingGroup && ['gestao_anuncios', 'oportunidades'].includes(activeTab));
+            const isActive = activeTab === item.id || (isMarketingGroup && ['gestao_anuncios', 'oportunidades', 'aguamarinha'].includes(activeTab));
 
             return (
               <div key={item.id}>
@@ -840,6 +839,12 @@ const App = () => {
                       className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${activeTab === 'oportunidades' ? 'bg-white/20 text-white font-medium' : 'text-purple-200 hover:text-white hover:bg-white/10'}`}
                     >
                       Oportunidades
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('aguamarinha')}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${activeTab === 'aguamarinha' ? 'bg-white/20 text-white font-medium' : 'text-purple-200 hover:text-white hover:bg-white/10'}`}
+                    >
+                      Agua Marinha
                     </button>
                   </div>
                 )}
