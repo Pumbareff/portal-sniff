@@ -46,7 +46,8 @@ import {
   Warehouse,
   Star,
   Camera,
-  Upload
+  Upload,
+  Compass
 } from 'lucide-react';
 import {
   BarChart,
@@ -65,6 +66,8 @@ import {
   Cell
 } from 'recharts';
 import { supabase } from './supabaseClient';
+import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 
 // Cores Oficiais
 const COLORS = {
@@ -72,6 +75,135 @@ const COLORS = {
   gold: '#F4B942',
   lightPurple: '#F3E8FF',
   darkPurple: '#4A1063'
+};
+
+// Extracted modal component - prevents parent re-render from destroying DOM/losing focus
+const PEDIDO_EMPTY_ITEM = { sku: '', produto: '', quantidade: '', preco_unitario: '', peso_unitario: '' };
+
+const NovaOrdemModal = ({ isOpen, onClose, onSubmit }) => {
+  const [formData, setFormData] = useState({
+    fornecedor: '', items: [{ ...PEDIDO_EMPTY_ITEM }], prazo_entrega: '', observacoes: ''
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      setFormData({ fornecedor: '', items: [{ ...PEDIDO_EMPTY_ITEM }], prazo_entrega: '', observacoes: '' });
+    }
+  }, [isOpen]);
+
+  const addItem = () => setFormData(prev => ({ ...prev, items: [...prev.items, { ...PEDIDO_EMPTY_ITEM }] }));
+  const removeItem = (idx) => setFormData(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
+  const updateItem = (idx, field, value) => {
+    setFormData(prev => {
+      const newItems = [...prev.items];
+      newItems[idx] = { ...newItems[idx], [field]: value };
+      return { ...prev, items: newItems };
+    });
+  };
+  const calcTotals = (items) => {
+    let valor = 0, peso = 0, qtd = 0;
+    (items || []).forEach(item => {
+      const q = Number(item.quantidade) || 0;
+      valor += q * (Number(item.preco_unitario) || 0);
+      peso += q * (Number(item.peso_unitario) || 0);
+      qtd += q;
+    });
+    return { valor_total: valor, peso_total: peso, quantidade_total: qtd };
+  };
+
+  const handleSubmit = async () => {
+    const success = await onSubmit(formData);
+    if (success !== false) {
+      setFormData({ fornecedor: '', items: [{ ...PEDIDO_EMPTY_ITEM }], prazo_entrega: '', observacoes: '' });
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-6 border-b">
+          <h3 className="text-lg font-bold text-gray-800">Nova Ordem de Compra</h3>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100"><X size={20} /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Fornecedor *</label>
+            <input type="text" value={formData.fornecedor} onChange={e => setFormData(prev => ({ ...prev, fornecedor: e.target.value }))} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" placeholder="Nome do fornecedor" />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">Itens do Pedido *</label>
+              <button onClick={addItem} className="flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-lg text-white" style={{ backgroundColor: COLORS.purple }}>
+                <Plus size={12} /> Adicionar Item
+              </button>
+            </div>
+            <div className="space-y-3">
+              {formData.items.map((item, idx) => (
+                <div key={idx} className="bg-gray-50 rounded-xl p-3 relative">
+                  {formData.items.length > 1 && (
+                    <button onClick={() => removeItem(idx)} className="absolute top-2 right-2 p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 size={14} /></button>
+                  )}
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-0.5">SKU</label>
+                      <input type="text" value={item.sku} onChange={e => updateItem(idx, 'sku', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="Ex: SNF-001" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-0.5">Produto *</label>
+                      <input type="text" value={item.produto} onChange={e => updateItem(idx, 'produto', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="Nome do produto" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-0.5">Qtd *</label>
+                      <input type="number" value={item.quantidade} onChange={e => updateItem(idx, 'quantidade', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="0" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-0.5">Preco Unit. (R$)</label>
+                      <input type="number" step="0.01" value={item.preco_unitario} onChange={e => updateItem(idx, 'preco_unitario', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="0.00" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-0.5">Peso Unit. (kg)</label>
+                      <input type="number" step="0.01" value={item.peso_unitario} onChange={e => updateItem(idx, 'peso_unitario', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="0.00" />
+                    </div>
+                  </div>
+                  {item.quantidade && item.preco_unitario && (
+                    <p className="text-xs text-right mt-1 font-medium" style={{ color: COLORS.purple }}>
+                      Subtotal: R$ {(Number(item.quantidade) * Number(item.preco_unitario)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+          {(() => {
+            const t = calcTotals(formData.items);
+            return t.valor_total > 0 ? (
+              <div className="bg-purple-50 rounded-xl p-3 grid grid-cols-3 gap-2 text-sm">
+                <div><span className="text-gray-500">Itens:</span> <span className="font-bold" style={{ color: COLORS.purple }}>{formData.items.length}</span></div>
+                <div><span className="text-gray-500">Total:</span> <span className="font-bold" style={{ color: COLORS.purple }}>R$ {t.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
+                <div><span className="text-gray-500">Peso:</span> <span className="font-bold" style={{ color: COLORS.purple }}>{t.peso_total.toFixed(2)} kg</span></div>
+              </div>
+            ) : null;
+          })()}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Prazo de Entrega</label>
+            <input type="date" value={formData.prazo_entrega} onChange={e => setFormData(prev => ({ ...prev, prazo_entrega: e.target.value }))} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Observacoes</label>
+            <textarea value={formData.observacoes} onChange={e => setFormData(prev => ({ ...prev, observacoes: e.target.value }))} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" rows={2} placeholder="Observacoes adicionais..." />
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 p-6 border-t">
+          <button onClick={onClose} className="px-4 py-2 text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200">Cancelar</button>
+          <button onClick={handleSubmit} disabled={!formData.fornecedor || !formData.items[0]?.produto || !formData.items[0]?.quantidade} className="px-4 py-2 text-white rounded-xl disabled:opacity-50" style={{ backgroundColor: COLORS.purple }}>Criar Ordem</button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 const App = () => {
@@ -99,13 +231,8 @@ const App = () => {
   const [showPermissionsModal, setShowPermissionsModal] = useState(false);
   const [editingProfile, setEditingProfile] = useState(null);
 
-  // States para Pedido Fornecedor (lifted for persistence across tabs)
-  const pedidoEmptyItem = { sku: '', produto: '', quantidade: '', preco_unitario: '', peso_unitario: '' };
+  // States para Pedido Fornecedor
   const [pedidoShowForm, setPedidoShowForm] = useState(false);
-  const [pedidoFormData, setPedidoFormData] = useState({
-    fornecedor: '', items: [{ ...pedidoEmptyItem }],
-    prazo_entrega: '', observacoes: ''
-  });
 
   // Check auth on mount
   useEffect(() => {
@@ -115,7 +242,8 @@ const App = () => {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      const newUser = session?.user ?? null;
+      setUser(prev => (prev?.id === newUser?.id ? prev : newUser));
     });
 
     return () => subscription.unsubscribe();
@@ -672,10 +800,10 @@ const App = () => {
 
         <nav className="mt-6 px-3 space-y-1">
           {navItems.map((item) => {
-            const marketingChildren = ['marketing', 'gestao_anuncios'];
+            const marketingChildren = ['marketing', 'gestao_anuncios', 'oportunidades'];
             const isMarketingGroup = item.id === 'marketing';
             const isMarketingExpanded = isMarketingGroup && marketingChildren.includes(activeTab);
-            const isActive = activeTab === item.id || (isMarketingGroup && activeTab === 'gestao_anuncios');
+            const isActive = activeTab === item.id || (isMarketingGroup && ['gestao_anuncios', 'oportunidades'].includes(activeTab));
 
             return (
               <div key={item.id}>
@@ -706,6 +834,12 @@ const App = () => {
                       className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${activeTab === 'gestao_anuncios' ? 'bg-white/20 text-white font-medium' : 'text-purple-200 hover:text-white hover:bg-white/10'}`}
                     >
                       Gestao de Produtos Parados
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('oportunidades')}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${activeTab === 'oportunidades' ? 'bg-white/20 text-white font-medium' : 'text-purple-200 hover:text-white hover:bg-white/10'}`}
+                    >
+                      Oportunidades
                     </button>
                   </div>
                 )}
@@ -955,9 +1089,9 @@ const App = () => {
                         <p className="text-xs mt-1 opacity-80">{c.message}</p>
                       </div>
                       {profile?.role === 'admin' && (
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                          <button onClick={() => { setEditingCom(c); setComForm({ title: c.title, message: c.message, priority: c.priority }); setShowComunicadoModal(true); }} className="p-1 hover:bg-white/50 rounded" title="Editar"><Edit2 size={12} /></button>
-                          <button onClick={() => handleDeleteComunicado(c.id)} className="p-1 hover:bg-red-100 rounded text-red-500" title="Remover"><Trash2 size={12} /></button>
+                        <div className="flex gap-1 shrink-0">
+                          <button onClick={() => { setEditingCom(c); setComForm({ title: c.title, message: c.message, priority: c.priority }); setShowComunicadoModal(true); }} className="p-1.5 hover:bg-white/50 rounded-lg text-gray-400 hover:text-blue-600 transition-colors" title="Editar"><Edit2 size={14} /></button>
+                          <button onClick={() => handleDeleteComunicado(c.id)} className="p-1.5 hover:bg-red-50 rounded-lg text-gray-400 hover:text-red-500 transition-colors" title="Remover"><Trash2 size={14} /></button>
                         </div>
                       )}
                     </div>
@@ -996,9 +1130,9 @@ const App = () => {
                       {d.description && <p className="text-xs text-gray-500 mt-0.5">{d.description}</p>}
                     </div>
                     {profile?.role === 'admin' && (
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                        <button onClick={() => { setEditingData(d); setDataForm({ title: d.title, description: d.description || '', date: d.date, category: d.category }); setShowDataModal(true); }} className="p-1 hover:bg-gray-200 rounded" title="Editar"><Edit2 size={12} /></button>
-                        <button onClick={() => handleDeleteData(d.id)} className="p-1 hover:bg-red-100 rounded text-red-500" title="Remover"><Trash2 size={12} /></button>
+                      <div className="flex gap-1 shrink-0">
+                        <button onClick={() => { setEditingData(d); setDataForm({ title: d.title, description: d.description || '', date: d.date, category: d.category }); setShowDataModal(true); }} className="p-1.5 hover:bg-gray-200 rounded-lg text-gray-400 hover:text-blue-600 transition-colors" title="Editar"><Edit2 size={14} /></button>
+                        <button onClick={() => handleDeleteData(d.id)} className="p-1.5 hover:bg-red-50 rounded-lg text-gray-400 hover:text-red-500 transition-colors" title="Remover"><Trash2 size={14} /></button>
                       </div>
                     )}
                     <div className="text-right min-w-[60px]">
@@ -2764,13 +2898,10 @@ const App = () => {
     const [pedidos, setPedidos] = useState([]);
     const showForm = pedidoShowForm;
     const setShowForm = setPedidoShowForm;
-    const formData = pedidoFormData;
-    const setFormData = setPedidoFormData;
     const [activeFilter, setActiveFilter] = useState('todos');
     const [respondingTo, setRespondingTo] = useState(null);
     const [viewingDetail, setViewingDetail] = useState(null);
     const [dbReady, setDbReady] = useState(true);
-    const emptyItem = pedidoEmptyItem;
     const [responseData, setResponseData] = useState({ preco_resposta: '', prazo_resposta: '' });
 
     // Load pedidos from Supabase
@@ -2799,14 +2930,7 @@ const App = () => {
       return `OC-2026-${num}`;
     };
 
-    // Multi-item helpers
-    const addItem = () => setFormData({ ...formData, items: [...formData.items, { ...emptyItem }] });
-    const removeItem = (idx) => setFormData({ ...formData, items: formData.items.filter((_, i) => i !== idx) });
-    const updateItem = (idx, field, value) => {
-      const newItems = [...formData.items];
-      newItems[idx] = { ...newItems[idx], [field]: value };
-      setFormData({ ...formData, items: newItems });
-    };
+    // calcTotals kept for handleDownloadPDF and handleCreatePedido
 
     const calcTotals = (items) => {
       let valor = 0, peso = 0, qtd = 0;
@@ -2819,7 +2943,7 @@ const App = () => {
       return { valor_total: valor, peso_total: peso, quantidade_total: qtd };
     };
 
-    const handleCreatePedido = async () => {
+    const handleCreatePedido = async (formData) => {
       const totals = calcTotals(formData.items);
       const produtoResumo = formData.items.map(i => i.sku ? `${i.sku} (${i.quantidade})` : `${i.produto} (${i.quantidade})`).join(', ');
       const newPedido = {
@@ -2849,14 +2973,13 @@ const App = () => {
         } else if (error) {
           console.error('Insert error:', error.message);
           alert('Erro ao salvar: ' + error.message + '\n\nVerifique se a tabela pedidos_fornecedor existe no Supabase.');
-          return;
+          return false;
         }
       } catch (e) {
         console.error('DB error:', e);
         alert('Erro de conexao com banco de dados.');
-        return;
+        return false;
       }
-      setFormData({ fornecedor: '', items: [{ ...emptyItem }], prazo_entrega: '', observacoes: '' });
       setShowForm(false);
     };
 
@@ -3087,96 +3210,8 @@ const App = () => {
           </div>
         </div>
 
-        {/* New Order Modal */}
-        {showForm && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between p-6 border-b">
-                <h3 className="text-lg font-bold text-gray-800">Nova Ordem de Compra</h3>
-                <button onClick={() => setShowForm(false)} className="p-1 rounded-lg hover:bg-gray-100"><X size={20} /></button>
-              </div>
-              <div className="p-6 space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Fornecedor *</label>
-                  <input type="text" value={formData.fornecedor} onChange={e => setFormData({ ...formData, fornecedor: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" placeholder="Nome do fornecedor" />
-                </div>
-
-                {/* Items (Multi-SKU) */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-gray-700">Itens do Pedido *</label>
-                    <button onClick={addItem} className="flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-lg text-white" style={{ backgroundColor: COLORS.purple }}>
-                      <Plus size={12} /> Adicionar Item
-                    </button>
-                  </div>
-                  <div className="space-y-3">
-                    {formData.items.map((item, idx) => (
-                      <div key={idx} className="bg-gray-50 rounded-xl p-3 relative">
-                        {formData.items.length > 1 && (
-                          <button onClick={() => removeItem(idx)} className="absolute top-2 right-2 p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 size={14} /></button>
-                        )}
-                        <div className="grid grid-cols-2 gap-2 mb-2">
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-0.5">SKU</label>
-                            <input type="text" value={item.sku} onChange={e => updateItem(idx, 'sku', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="Ex: SNF-001" />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-0.5">Produto *</label>
-                            <input type="text" value={item.produto} onChange={e => updateItem(idx, 'produto', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="Nome do produto" />
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2">
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-0.5">Qtd *</label>
-                            <input type="number" value={item.quantidade} onChange={e => updateItem(idx, 'quantidade', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="0" />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-0.5">Preco Unit. (R$)</label>
-                            <input type="number" step="0.01" value={item.preco_unitario} onChange={e => updateItem(idx, 'preco_unitario', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="0.00" />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-0.5">Peso Unit. (kg)</label>
-                            <input type="number" step="0.01" value={item.peso_unitario} onChange={e => updateItem(idx, 'peso_unitario', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="0.00" />
-                          </div>
-                        </div>
-                        {item.quantidade && item.preco_unitario && (
-                          <p className="text-xs text-right mt-1 font-medium" style={{ color: COLORS.purple }}>
-                            Subtotal: R$ {(Number(item.quantidade) * Number(item.preco_unitario)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Totals */}
-                {(() => {
-                  const t = calcTotals(formData.items);
-                  return t.valor_total > 0 ? (
-                    <div className="bg-purple-50 rounded-xl p-3 grid grid-cols-3 gap-2 text-sm">
-                      <div><span className="text-gray-500">Itens:</span> <span className="font-bold" style={{ color: COLORS.purple }}>{formData.items.length}</span></div>
-                      <div><span className="text-gray-500">Total:</span> <span className="font-bold" style={{ color: COLORS.purple }}>R$ {t.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
-                      <div><span className="text-gray-500">Peso:</span> <span className="font-bold" style={{ color: COLORS.purple }}>{t.peso_total.toFixed(2)} kg</span></div>
-                    </div>
-                  ) : null;
-                })()}
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Prazo de Entrega</label>
-                  <input type="date" value={formData.prazo_entrega} onChange={e => setFormData({ ...formData, prazo_entrega: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Observacoes</label>
-                  <textarea value={formData.observacoes} onChange={e => setFormData({ ...formData, observacoes: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200" rows={2} placeholder="Observacoes adicionais..." />
-                </div>
-              </div>
-              <div className="flex justify-end gap-3 p-6 border-t">
-                <button onClick={() => setShowForm(false)} className="px-4 py-2 text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200">Cancelar</button>
-                <button onClick={handleCreatePedido} disabled={!formData.fornecedor || !formData.items[0]?.produto || !formData.items[0]?.quantidade} className="px-4 py-2 text-white rounded-xl disabled:opacity-50" style={{ backgroundColor: COLORS.purple }}>Criar Ordem</button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* New Order Modal - extracted component to fix input focus bug */}
+        <NovaOrdemModal isOpen={showForm} onClose={() => setShowForm(false)} onSubmit={handleCreatePedido} />
 
         {/* Response Modal */}
         {respondingTo && (
@@ -5598,6 +5633,885 @@ const App = () => {
     );
   };
 
+  // ==================== OPORTUNIDADES v2 ====================
+  const OportunidadesView = () => {
+    const [items, setItems] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [showForm, setShowForm] = useState(false);
+    const [editingItem, setEditingItem] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [filterStatus, setFilterStatus] = useState('todos');
+    const [activeSubTab, setActiveSubTab] = useState('todos');
+    const [csvPreview, setCsvPreview] = useState(null);
+    const [importing, setImporting] = useState(false);
+    const [showReport, setShowReport] = useState(false);
+    const emptyForm = { produto: '', fornecedor: '', preco_venda: '', plataforma: '', media_vendas_mes: '', preco_ideal_pagar: '', link_referencia: '', observacoes: '', status: 'mapeado', visitas: '', conversao: '', faturamento_30d: '', share_mercado: '', grupo: '' };
+    const [filterGrupo, setFilterGrupo] = useState('todos');
+    const [reportGrupo, setReportGrupo] = useState('');
+    const normalizeAccents = (str) => str ? str.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : '';
+    const grupos = useMemo(() => {
+      const seen = new Map();
+      items.forEach(i => {
+        if (i.grupo) {
+          const norm = normalizeAccents(i.grupo.toUpperCase());
+          if (!seen.has(norm)) seen.set(norm, i.grupo);
+        }
+      });
+      return [...seen.values()].sort();
+    }, [items]);
+    const [formData, setFormData] = useState({ ...emptyForm });
+
+    const plataformas = ['Mercado Livre', 'Shopee', 'Amazon', 'TikTok Shop', 'Temu', 'Shein', 'Magazine Luiza', 'Outro'];
+    const statusOpts = [
+      { value: 'mapeado', label: 'Mapeado', color: 'bg-blue-100 text-blue-800' },
+      { value: 'em_analise', label: 'Em Analise', color: 'bg-yellow-100 text-yellow-800' },
+      { value: 'aprovado', label: 'Aprovado', color: 'bg-green-100 text-green-800' },
+      { value: 'descartado', label: 'Descartado', color: 'bg-red-100 text-red-800' },
+      { value: 'em_negociacao', label: 'Em Negociacao', color: 'bg-purple-100 text-purple-800' }
+    ];
+    const getStatusStyle = (s) => statusOpts.find(o => o.value === s)?.color || 'bg-gray-100 text-gray-800';
+    const getStatusLabel = (s) => statusOpts.find(o => o.value === s)?.label || s;
+
+    const comissoes = {
+      'Mercado Livre': { pct: 0.115, fixo: (p) => p < 79 ? 6.50 : 0, label: '11.5% + R$6.50 (se <R$79)' },
+      'Shopee': { pct: 0.20, fixo: () => 4, label: '20% + R$4/item' },
+      'Amazon': { pct: 0.12, fixo: (p) => p >= 100 ? 0 : 5, label: '12% + R$5 (gratis >R$100)' },
+      'TikTok Shop': { pct: 0.15, fixo: () => 0, label: '15%' },
+      'Temu': { pct: 0.20, fixo: () => 0, label: '20%' },
+      'Shein': { pct: 0.20, fixo: () => 0, label: '20%' },
+      'Magazine Luiza': { pct: 0.18, fixo: () => 0, label: '18%' },
+      'Outro': { pct: 0.15, fixo: () => 0, label: '15%' }
+    };
+    const impostoSimples = 0.08;
+    const margemAlvo = 0.15;
+
+    const calcPrecoIdeal = (precoVenda, plataforma) => {
+      if (!precoVenda) return null;
+      const c = comissoes[plataforma] || comissoes['Outro'];
+      const taxaFixa = c.fixo(precoVenda);
+      const ideal = precoVenda * (1 - c.pct - impostoSimples - margemAlvo) - taxaFixa;
+      return Math.max(0, ideal).toFixed(2);
+    };
+
+    useEffect(() => { loadData(); }, []);
+
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const { data } = await supabase.from('oportunidades').select('*').order('created_at', { ascending: false });
+        if (data) setItems(data);
+      } catch (err) { console.error('Oportunidades fetch error:', err); }
+      setLoading(false);
+    };
+
+    const handleSave = async () => {
+      if (!formData.produto) return;
+      const payload = {
+        produto: formData.produto,
+        fornecedor: formData.fornecedor || null,
+        preco_venda: Number(formData.preco_venda) || null,
+        plataforma: formData.plataforma || null,
+        media_vendas_mes: Number(formData.media_vendas_mes) || null,
+        preco_ideal_pagar: Number(formData.preco_ideal_pagar) || null,
+        link_referencia: formData.link_referencia || null,
+        observacoes: formData.observacoes || null,
+        status: formData.status,
+        visitas: Number(formData.visitas) || 0,
+        conversao: Number(formData.conversao) || 0,
+        faturamento_30d: Number(formData.faturamento_30d) || 0,
+        share_mercado: Number(formData.share_mercado) || 0,
+        grupo: formData.grupo || null,
+        updated_at: new Date().toISOString()
+      };
+      try {
+        if (editingItem) {
+          const { data } = await supabase.from('oportunidades').update(payload).eq('id', editingItem.id).select();
+          if (data) setItems(prev => prev.map(p => p.id === editingItem.id ? data[0] : p));
+        } else {
+          payload.user_id = user.id;
+          const { data } = await supabase.from('oportunidades').insert(payload).select();
+          if (data) setItems(prev => [data[0], ...prev]);
+        }
+      } catch (err) { console.error('Save error:', err); }
+      setShowForm(false);
+      setEditingItem(null);
+      setFormData({ ...emptyForm });
+    };
+
+    const handleEdit = (item) => {
+      setEditingItem(item);
+      setFormData({
+        produto: item.produto || '', fornecedor: item.fornecedor || '', preco_venda: item.preco_venda || '',
+        plataforma: item.plataforma || '', media_vendas_mes: item.media_vendas_mes || '', preco_ideal_pagar: item.preco_ideal_pagar || '',
+        link_referencia: item.link_referencia || '', observacoes: item.observacoes || '', status: item.status || 'mapeado',
+        visitas: item.visitas || '', conversao: item.conversao || '', faturamento_30d: item.faturamento_30d || '', share_mercado: item.share_mercado || '', grupo: item.grupo || ''
+      });
+      setShowForm(true);
+    };
+
+    const handleDelete = async (id) => {
+      if (!confirm('Remover esta oportunidade?')) return;
+      await supabase.from('oportunidades').delete().eq('id', id);
+      setItems(prev => prev.filter(p => p.id !== id));
+    };
+
+    // File Upload for Nubimetrics (ML) - supports CSV and Excel (.xlsx/.xls)
+    const handleCsvUpload = (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const isExcel = file.name.match(/\.xlsx?$/i);
+
+      if (isExcel) {
+        // Excel parsing (Nubimetrics format)
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          try {
+            const wb = XLSX.read(evt.target.result, { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const allRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+            // Nubimetrics format: Row 1=title, Row 2=date range, Row 3=empty, Row 4=headers, Row 5+=data
+            // Find header row: must have 3+ non-empty cells AND contain "Vendas" keyword
+            let headerIdx = -1;
+            for (let i = 0; i < Math.min(10, allRows.length); i++) {
+              const row = allRows[i];
+              const nonEmpty = row.filter(c => c !== '' && c != null).length;
+              if (nonEmpty < 3) continue; // Skip title/date rows (single merged cell)
+              const rowStr = row.map(c => String(c).toLowerCase()).join('|');
+              if (rowStr.includes('vendas') && (rowStr.includes('vendedor') || rowStr.includes('anuncio') || rowStr.includes('an\u00fancio') || rowStr.includes('pre\u00e7o') || rowStr.includes('preco'))) {
+                headerIdx = i;
+                break;
+              }
+            }
+            if (headerIdx === -1) { alert('Formato nao reconhecido. Nao encontrei cabecalho com colunas "Vendas", "Vendedor", "Preco".'); return; }
+
+            const headers = allRows[headerIdx].map(h => String(h).trim());
+            const dataRows = allRows.slice(headerIdx + 1).filter(r => r.some(c => c !== ''));
+
+            // Map columns
+            const findIdx = (patterns) => headers.findIndex(h => patterns.some(p => h.toLowerCase().includes(p)));
+            const iData = findIdx(['data', 'date']);
+            const iAnuncio = findIdx(['titulo', 't\u00edtulo', 'anuncio', 'an\u00fancio', 'produto']);
+            const iVendedor = findIdx(['vendedor', 'seller', 'loja']);
+            const iVendasR = findIdx(['vendas em $', 'vendas r$', 'faturamento', 'revenue']);
+            const iVendasUn = findIdx(['vendas em unid', 'unidades', 'units', 'qtd']);
+            const iPreco = findIdx(['preco', 'pre\u00e7o', 'price']);
+            const iVisitas = findIdx(['visitas', 'visits', 'views']);
+            const iConversao = findIdx(['convers\u00e3o', 'conversao', 'conversion']);
+            const iShare = findIdx(['share em $', 'share', 'market share']);
+
+            if (iAnuncio === -1 && iVendedor === -1) { alert('Colunas "Titulo/Anuncio" ou "Vendedor" nao encontradas no arquivo.'); return; }
+
+            // Detect format: SUMMARY (no Data column or Data col has no dates) vs DAILY (has date column)
+            const isSummaryFormat = iData === -1 || !dataRows.some(r => {
+              const v = r[iData];
+              if (!v) return false;
+              if (typeof v === 'number' && v > 40000 && v < 60000) return true;
+              return String(v).match(/^\d{4}-\d{2}-\d{2}/);
+            });
+
+            let parsed;
+            let periodDays = 30;
+            let extrapolationFactor = 1;
+
+            if (isSummaryFormat) {
+              // SUMMARY FORMAT: 1 row per seller, already 30-day data
+              parsed = dataRows.map(row => {
+                const anuncio = iAnuncio >= 0 ? String(row[iAnuncio] || '').trim() : '';
+                const vendedor = iVendedor >= 0 ? String(row[iVendedor] || '').trim() : '';
+                if (!anuncio && !vendedor) return null;
+                const vendasUn = iVendasUn >= 0 ? (parseInt(String(row[iVendasUn] || '0')) || 0) : 0;
+                const preco = iPreco >= 0 ? (parseFloat(String(row[iPreco] || '0').replace(',', '.')) || 0) : 0;
+                const faturamento = iVendasR >= 0 ? (parseFloat(String(row[iVendasR] || '0').replace(',', '.')) || 0) : 0;
+                const visitas = iVisitas >= 0 ? (parseInt(String(row[iVisitas] || '0')) || 0) : 0;
+                const conversao = iConversao >= 0 ? (parseFloat(String(row[iConversao] || '0').replace(',', '.')) || 0) : 0;
+                const share = iShare >= 0 ? (parseFloat(String(row[iShare] || '0').replace(',', '.')) || 0) : 0;
+                return {
+                  produto: (anuncio || vendedor).substring(0, 150),
+                  fornecedor: vendedor,
+                  preco_venda: Math.round(preco * 100) / 100,
+                  media_vendas_mes: vendasUn,
+                  faturamento_30d: Math.round(faturamento * 100) / 100,
+                  visitas,
+                  conversao: Math.round(conversao * 100) / 100,
+                  share_mercado: Math.round(share * 100) / 100,
+                  link_referencia: '',
+                  plataforma: 'Mercado Livre'
+                };
+              }).filter(r => r && r.produto && r.media_vendas_mes > 0)
+                .sort((a, b) => b.media_vendas_mes - a.media_vendas_mes);
+            } else {
+              // DAILY FORMAT: multiple rows per seller with dates, needs aggregation
+              const excelDateToStr = (d) => {
+                if (!d) return '';
+                if (typeof d === 'number' && d > 40000 && d < 60000) return new Date((d - 25569) * 86400 * 1000).toISOString().slice(0, 10);
+                const s = String(d).trim();
+                if (s.match(/^\d{4}-\d{2}-\d{2}/)) return s.slice(0, 10);
+                const m2 = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+                if (m2) return `${m2[3]}-${m2[2]}-${m2[1]}`;
+                return s;
+              };
+              const dates = new Set();
+              dataRows.forEach(r => { if (iData >= 0) { const ds = excelDateToStr(r[iData]); if (ds.match(/^\d{4}-\d{2}-\d{2}$/)) dates.add(ds); } });
+              periodDays = Math.max(dates.size, 1);
+              extrapolationFactor = 30 / periodDays;
+
+              const sellers = {};
+              dataRows.forEach(row => {
+                const vendedor = iVendedor >= 0 ? String(row[iVendedor] || '').trim() : '';
+                const anuncio = iAnuncio >= 0 ? String(row[iAnuncio] || '').trim() : '';
+                const key = vendedor || anuncio;
+                if (!key) return;
+                const vendasUn = iVendasUn >= 0 ? (parseFloat(String(row[iVendasUn] || '0').replace(/[^\d.,]/g, '').replace(',', '.')) || 0) : 0;
+                const preco = iPreco >= 0 ? (parseFloat(String(row[iPreco] || '0').replace(/[^\d.,]/g, '').replace(',', '.')) || 0) : 0;
+                if (!sellers[key]) sellers[key] = { anuncio: anuncio || '', vendedor: vendedor || '', maxVendas: 0, precos: [] };
+                if (vendasUn > sellers[key].maxVendas) sellers[key].maxVendas = vendasUn;
+                if (preco > 0) sellers[key].precos.push(preco);
+                if (anuncio && !sellers[key].anuncio) sellers[key].anuncio = anuncio;
+              });
+              parsed = Object.values(sellers).map(s => {
+                const avgPreco = s.precos.length > 0 ? s.precos.reduce((a, b) => a + b, 0) / s.precos.length : 0;
+                return {
+                  produto: (s.anuncio || s.vendedor).substring(0, 150),
+                  fornecedor: s.vendedor,
+                  preco_venda: Math.round(avgPreco * 100) / 100,
+                  media_vendas_mes: Math.round(s.maxVendas * extrapolationFactor),
+                  faturamento_30d: 0, visitas: 0, conversao: 0, share_mercado: 0,
+                  link_referencia: '',
+                  plataforma: 'Mercado Livre'
+                };
+              }).filter(r => r.produto && r.media_vendas_mes > 0)
+                .sort((a, b) => b.media_vendas_mes - a.media_vendas_mes);
+            }
+
+            if (parsed.length === 0) { alert('Nenhum dado de vendas encontrado no arquivo. Verifique o formato.'); return; }
+
+            // Extract group name from filename: "Grupo de anuncios - PRODUCT NAME - dates.xlsx"
+            const grupoMatch = file.name.match(/^Grupo de an[uú]ncios\s*-\s*(.+?)\s*-\s*(?:Evolu|[\d]{4})/i);
+            const grupoName = grupoMatch ? grupoMatch[1].trim().toUpperCase() : file.name.replace(/\.[^.]+$/, '').toUpperCase();
+
+            setCsvPreview({
+              data: parsed,
+              fileName: file.name,
+              grupo: grupoName,
+              colMap: { colTitulo: headers[iAnuncio], colPreco: headers[iPreco], colVendas: headers[iVendasUn], colVendedor: headers[iVendedor] },
+              totalRows: dataRows.length,
+              isSummary: isSummaryFormat,
+              periodDays: isSummaryFormat ? 30 : periodDays,
+              extrapolationFactor: isSummaryFormat ? '1.0' : extrapolationFactor.toFixed(1)
+            });
+          } catch (err) {
+            console.error('Excel parse error:', err);
+            alert('Erro ao ler o arquivo Excel: ' + err.message);
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        // CSV parsing (original Papa Parse)
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          encoding: 'UTF-8',
+          complete: (results) => {
+            if (results.data?.length > 0) {
+              const cols = Object.keys(results.data[0]);
+              const findCol = (patterns) => cols.find(c => patterns.some(p => c.toLowerCase().includes(p)));
+              const colTitulo = findCol(['titulo', 't\u00edtulo', 'nome', 'product', 'anuncio', 'an\u00fancio', 'item']);
+              const colPreco = findCol(['preco', 'pre\u00e7o', 'price', 'valor']);
+              const colVendas = findCol(['vendas', 'venda', 'sold', 'units', 'unidades', 'quantidade', 'qtd']);
+              const colVendedor = findCol(['vendedor', 'seller', 'loja', 'store']);
+              const colLink = findCol(['link', 'url', 'permalink']);
+              const parsed = results.data.filter(row => row[colTitulo]).map(row => ({
+                produto: row[colTitulo]?.trim().substring(0, 150) || '',
+                fornecedor: row[colVendedor]?.trim() || '',
+                preco_venda: parseFloat(String(row[colPreco] || '0').replace(/[^\d.,]/g, '').replace(',', '.')) || 0,
+                media_vendas_mes: parseInt(String(row[colVendas] || '0').replace(/[^\d]/g, '')) || 0,
+                link_referencia: row[colLink]?.trim() || '',
+                plataforma: 'Mercado Livre'
+              })).filter(r => r.produto && r.media_vendas_mes > 0);
+              const grupoMatchCsv = file.name.match(/^Grupo de an[uú]ncios\s*-\s*(.+?)\s*-\s*(?:Evolu|[\d]{4})/i);
+              const grupoNameCsv = grupoMatchCsv ? grupoMatchCsv[1].trim().toUpperCase() : file.name.replace(/\.[^.]+$/, '').toUpperCase();
+              setCsvPreview({ data: parsed, fileName: file.name, grupo: grupoNameCsv, colMap: { colTitulo, colPreco, colVendas, colVendedor, colLink }, totalRows: results.data.length });
+            }
+          },
+          error: (err) => { console.error('CSV parse error:', err); alert('Erro ao ler o arquivo CSV'); }
+        });
+      }
+      e.target.value = '';
+    };
+
+    const handleImportCsv = async () => {
+      if (!csvPreview?.data?.length) return;
+      setImporting(true);
+      const rows = csvPreview.data.map(r => ({
+        produto: r.produto,
+        fornecedor: r.fornecedor,
+        preco_venda: r.preco_venda,
+        media_vendas_mes: r.media_vendas_mes,
+        link_referencia: r.link_referencia || '',
+        plataforma: r.plataforma || 'Mercado Livre',
+        preco_ideal_pagar: Number(calcPrecoIdeal(r.preco_venda, 'Mercado Livre')) || null,
+        visitas: r.visitas || 0,
+        conversao: r.conversao || 0,
+        faturamento_30d: r.faturamento_30d || 0,
+        share_mercado: r.share_mercado || 0,
+        grupo: csvPreview.grupo || '',
+        status: 'mapeado',
+        user_id: user.id,
+        updated_at: new Date().toISOString()
+      }));
+      try {
+        const batchSize = 50;
+        for (let i = 0; i < rows.length; i += batchSize) {
+          const batch = rows.slice(i, i + batchSize);
+          const { data } = await supabase.from('oportunidades').insert(batch).select();
+          if (data) setItems(prev => [...data, ...prev]);
+        }
+      } catch (err) { console.error('Import error:', err); }
+      setCsvPreview(null);
+      setImporting(false);
+    };
+
+    const filtered = items.filter(item => {
+      const matchSearch = !searchTerm || item.produto?.toLowerCase().includes(searchTerm.toLowerCase()) || item.fornecedor?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchPlat = activeSubTab === 'todos' || (activeSubTab === 'ml' && item.plataforma === 'Mercado Livre') || (activeSubTab === 'shopee' && item.plataforma === 'Shopee') || (activeSubTab === 'amazon' && item.plataforma === 'Amazon');
+      const matchStatus = filterStatus === 'todos' || item.status === filterStatus;
+      const matchGrupo = filterGrupo === 'todos' || normalizeAccents((item.grupo || '').toUpperCase()) === normalizeAccents(filterGrupo.toUpperCase());
+      return matchSearch && matchPlat && matchStatus && matchGrupo;
+    });
+
+    const grupoItems = filterGrupo === 'todos' ? items : items.filter(i => normalizeAccents((i.grupo || '').toUpperCase()) === normalizeAccents(filterGrupo.toUpperCase()));
+    const stats = {
+      total: grupoItems.length,
+      ml: grupoItems.filter(i => i.plataforma === 'Mercado Livre').length,
+      shopee: grupoItems.filter(i => i.plataforma === 'Shopee').length,
+      amazon: grupoItems.filter(i => i.plataforma === 'Amazon').length,
+      potencial_mensal: grupoItems.reduce((sum, i) => sum + ((i.preco_venda || 0) * (i.media_vendas_mes || 0)), 0)
+    };
+
+    const calcMargem = (item) => {
+      if (!item.preco_venda || !item.preco_ideal_pagar) return null;
+      return ((item.preco_venda - item.preco_ideal_pagar) / item.preco_venda * 100).toFixed(1);
+    };
+
+    const calcFaturamento = (item) => {
+      if (!item.preco_venda || !item.media_vendas_mes) return null;
+      return (item.preco_venda * item.media_vendas_mes).toFixed(2);
+    };
+
+    // Report: aggregate by product across marketplaces
+    const generateReport = () => {
+      const byProduct = {};
+      items.forEach(item => {
+        const key = item.produto?.toLowerCase().trim();
+        if (!key) return;
+        if (!byProduct[key]) byProduct[key] = { produto: item.produto, entries: [], fornecedor: item.fornecedor };
+        byProduct[key].entries.push(item);
+        if (item.fornecedor && !byProduct[key].fornecedor) byProduct[key].fornecedor = item.fornecedor;
+      });
+      return Object.values(byProduct).map(group => {
+        const entries = group.entries;
+        const avgVendas = Math.round(entries.reduce((s, e) => s + (e.media_vendas_mes || 0), 0) / entries.length);
+        const avgPreco = entries.reduce((s, e) => s + (e.preco_venda || 0), 0) / entries.length;
+        const platformData = entries.map(e => ({ plataforma: e.plataforma, vendas: e.media_vendas_mes, preco: e.preco_venda }));
+        const precoIdealByPlat = entries.map(e => ({ plat: e.plataforma, ideal: calcPrecoIdeal(e.preco_venda, e.plataforma) }));
+        const avgIdeal = precoIdealByPlat.reduce((s, p) => s + (Number(p.ideal) || 0), 0) / precoIdealByPlat.length;
+        return {
+          produto: group.produto, fornecedor: group.fornecedor, plataformas: entries.length,
+          platformData, avgVendas, avgPreco: avgPreco.toFixed(2), avgIdeal: avgIdeal.toFixed(2),
+          fatMensal: (avgPreco * avgVendas).toFixed(2),
+          margem: avgPreco > 0 ? ((avgPreco - avgIdeal) / avgPreco * 100).toFixed(1) : '0'
+        };
+      }).sort((a, b) => b.avgVendas - a.avgVendas);
+    };
+
+    if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#6B1B8E]" /></div>;
+
+    const subTabs = [
+      { id: 'todos', label: 'Todos', count: stats.total },
+      { id: 'ml', label: 'Mercado Livre', count: stats.ml, color: 'text-yellow-600' },
+      { id: 'shopee', label: 'Shopee', count: stats.shopee, color: 'text-orange-600' },
+      { id: 'amazon', label: 'Amazon', count: stats.amazon, color: 'text-blue-600' },
+      { id: 'relatorio', label: 'Relatorio', icon: true }
+    ];
+
+    return (
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Compass size={28} className="text-[#6B1B8E]" /> Oportunidades</h2>
+            <p className="text-sm text-gray-500 mt-1">Mapeamento de novos produtos e oportunidades de mercado</p>
+          </div>
+          <div className="flex gap-2">
+            {activeSubTab === 'ml' && (
+              <label className="flex items-center gap-2 px-4 py-2.5 bg-yellow-500 text-white rounded-xl hover:bg-yellow-600 transition-colors shadow-lg cursor-pointer">
+                <Upload size={18} /> Importar Nubimetrics
+                <input type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleCsvUpload} className="hidden" />
+              </label>
+            )}
+            <button onClick={() => { setEditingItem(null); setFormData({ ...emptyForm, plataforma: activeSubTab === 'ml' ? 'Mercado Livre' : activeSubTab === 'shopee' ? 'Shopee' : activeSubTab === 'amazon' ? 'Amazon' : '' }); setShowForm(true); }} className="flex items-center gap-2 px-4 py-2.5 bg-[#6B1B8E] text-white rounded-xl hover:bg-[#5a1578] transition-colors shadow-lg">
+              <Plus size={18} /> Nova Oportunidade
+            </button>
+          </div>
+        </div>
+
+        {/* Sub-tabs */}
+        <div className="bg-white rounded-xl shadow-sm border p-1 flex gap-1">
+          {subTabs.map(tab => (
+            <button key={tab.id} onClick={() => { setActiveSubTab(tab.id); if (tab.id === 'relatorio') setShowReport(true); else setShowReport(false); }}
+              className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeSubTab === tab.id ? 'bg-[#6B1B8E] text-white shadow' : 'text-gray-600 hover:bg-gray-100'}`}>
+              {tab.icon && <BarChart3 size={14} className="inline mr-1" />}
+              {tab.label}
+              {tab.count !== undefined && <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-xs ${activeSubTab === tab.id ? 'bg-white/20' : 'bg-gray-200'}`}>{tab.count}</span>}
+            </button>
+          ))}
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-xl p-4 shadow-sm border">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">ML</p>
+            <p className="text-2xl font-bold text-yellow-600 mt-1">{stats.ml}</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 shadow-sm border">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Shopee</p>
+            <p className="text-2xl font-bold text-orange-600 mt-1">{stats.shopee}</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 shadow-sm border">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Amazon</p>
+            <p className="text-2xl font-bold text-blue-600 mt-1">{stats.amazon}</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 shadow-sm border">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Potencial Mensal Total</p>
+            <p className="text-2xl font-bold text-[#6B1B8E] mt-1">R$ {stats.potencial_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+          </div>
+        </div>
+
+        {/* Report View */}
+        {showReport ? (() => {
+          const rItems = reportGrupo ? items.filter(i => normalizeAccents((i.grupo || '').toUpperCase()) === normalizeAccents(reportGrupo.toUpperCase())) : items;
+          const SHARE_PCT = 0.15;
+          const COVER_DAYS = 60;
+          const COVER_MONTHS = COVER_DAYS / 30;
+
+          // Group by marketplace
+          const byPlat = {};
+          rItems.forEach(item => {
+            const plat = item.plataforma || 'Outro';
+            if (!byPlat[plat]) byPlat[plat] = [];
+            byPlat[plat].push(item);
+          });
+          const mktStats = Object.entries(byPlat).map(([plat, sellers]) => {
+            const totalVendas = sellers.reduce((s, i) => s + (i.media_vendas_mes || 0), 0);
+            const totalFat = sellers.reduce((s, i) => s + ((i.preco_venda || 0) * (i.media_vendas_mes || 0)), 0);
+            const avgPreco = totalVendas > 0 ? totalFat / totalVendas : 0;
+            const precoIdeal = Number(calcPrecoIdeal(avgPreco, plat)) || 0;
+            const myShare = Math.round(totalVendas * SHARE_PCT);
+            const myBuy = Math.round(myShare * COVER_MONTHS);
+            return { plataforma: plat, sellers: sellers.length, totalVendas, totalFat, avgPreco, precoIdeal, myShare, myBuy };
+          }).sort((a, b) => b.totalVendas - a.totalVendas);
+
+          const totalMercado = mktStats.reduce((s, m) => s + m.totalVendas, 0);
+          const totalFatMercado = mktStats.reduce((s, m) => s + m.totalFat, 0);
+          const myShareTotal = Math.round(totalMercado * SHARE_PCT);
+          const myBuyTotal = Math.round(myShareTotal * COVER_MONTHS);
+          const avgPrecoGeral = totalMercado > 0 ? totalFatMercado / totalMercado : 0;
+          const weightedIdeal = myShareTotal > 0 ? mktStats.reduce((s, m) => s + m.precoIdeal * m.myShare, 0) / myShareTotal : 0;
+          const investimento = myBuyTotal * weightedIdeal;
+
+          return (
+            <div className="space-y-4">
+              {/* Group selector */}
+              <div className="bg-white rounded-xl shadow-sm border p-4 flex flex-wrap items-center gap-4">
+                <label className="text-sm font-semibold text-gray-700">Produto:</label>
+                <select value={reportGrupo} onChange={e => setReportGrupo(e.target.value)} className="flex-1 min-w-[250px] px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E] font-medium">
+                  <option value="">Todos os Produtos</option>
+                  {grupos.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+                <div className="text-xs text-gray-400">Marketshare: {(SHARE_PCT * 100).toFixed(0)}% | Cobertura: {COVER_DAYS} dias</div>
+              </div>
+
+              {rItems.length === 0 ? (
+                <div className="bg-white rounded-xl p-12 shadow-sm border text-center">
+                  <BarChart3 size={48} className="mx-auto text-gray-300 mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-600">Nenhum dado para gerar relatorio</h3>
+                  <p className="text-sm text-gray-400 mt-1">Importe dados do Nubimetrics ou adicione oportunidades manualmente</p>
+                </div>
+              ) : (
+                <>
+                  {/* Consolidated Summary Cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <div className="bg-white rounded-xl p-4 shadow-sm border">
+                      <p className="text-xs text-gray-500 uppercase">Mercado Total</p>
+                      <p className="text-xl font-bold text-gray-800 mt-1">{totalMercado.toLocaleString('pt-BR')} un/mes</p>
+                      <p className="text-xs text-gray-400">R$ {totalFatMercado.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}/mes</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-4 shadow-sm border border-purple-200 bg-purple-50">
+                      <p className="text-xs text-purple-600 uppercase font-semibold">Minha Meta ({(SHARE_PCT * 100).toFixed(0)}%)</p>
+                      <p className="text-xl font-bold text-[#6B1B8E] mt-1">{myShareTotal.toLocaleString('pt-BR')} un/mes</p>
+                      <p className="text-xs text-purple-500">Fat. est. R$ {(myShareTotal * avgPrecoGeral).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}/mes</p>
+                    </div>
+                    <div className="bg-yellow-50 rounded-xl p-4 shadow-sm border border-yellow-200">
+                      <p className="text-xs text-yellow-700 uppercase font-semibold">Comprar ({COVER_DAYS}d)</p>
+                      <p className="text-xl font-bold text-yellow-800 mt-1">{myBuyTotal.toLocaleString('pt-BR')} unidades</p>
+                      <p className="text-xs text-yellow-600">{COVER_MONTHS} meses de estoque</p>
+                    </div>
+                    <div className="bg-green-50 rounded-xl p-4 shadow-sm border border-green-200">
+                      <p className="text-xs text-green-700 uppercase font-semibold">Preco Ideal Pagar</p>
+                      <p className="text-xl font-bold text-green-800 mt-1">R$ {weightedIdeal.toFixed(2)}</p>
+                      <p className="text-xs text-green-600">Media ponderada por marketplace</p>
+                    </div>
+                    <div className="bg-blue-50 rounded-xl p-4 shadow-sm border border-blue-200">
+                      <p className="text-xs text-blue-700 uppercase font-semibold">Investimento Total</p>
+                      <p className="text-xl font-bold text-blue-800 mt-1">R$ {investimento.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                      <p className="text-xs text-blue-600">{myBuyTotal} un x R$ {weightedIdeal.toFixed(2)}</p>
+                    </div>
+                  </div>
+
+                  {/* Per-marketplace breakdown */}
+                  <div className="bg-white rounded-xl shadow-sm border p-6">
+                    <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2"><BarChart3 size={20} className="text-[#6B1B8E]" /> Breakdown por Marketplace</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 border-b">
+                            <th className="text-left px-4 py-3 font-semibold text-gray-600">Marketplace</th>
+                            <th className="text-right px-4 py-3 font-semibold text-gray-600">Vendedores</th>
+                            <th className="text-right px-4 py-3 font-semibold text-gray-600">Vendas Mercado</th>
+                            <th className="text-right px-4 py-3 font-semibold text-gray-600">Preco Medio</th>
+                            <th className="text-right px-4 py-3 font-semibold text-gray-600">Fat. Mercado</th>
+                            <th className="text-right px-4 py-3 font-semibold text-purple-700 bg-purple-50">Minha Meta (15%)</th>
+                            <th className="text-right px-4 py-3 font-semibold text-yellow-700 bg-yellow-50">Comprar (60d)</th>
+                            <th className="text-right px-4 py-3 font-semibold text-green-700 bg-green-50">Preco Ideal</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {mktStats.map((m, idx) => (
+                            <tr key={idx} className="border-b hover:bg-gray-50">
+                              <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-bold ${m.plataforma === 'Mercado Livre' ? 'bg-yellow-100 text-yellow-700' : m.plataforma === 'Shopee' ? 'bg-orange-100 text-orange-700' : m.plataforma === 'Amazon' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>{m.plataforma}</span></td>
+                              <td className="px-4 py-3 text-right">{m.sellers}</td>
+                              <td className="px-4 py-3 text-right font-medium">{m.totalVendas.toLocaleString('pt-BR')} un/mes</td>
+                              <td className="px-4 py-3 text-right">R$ {m.avgPreco.toFixed(2)}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">R$ {m.totalFat.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                              <td className="px-4 py-3 text-right font-bold text-purple-700 bg-purple-50">{m.myShare.toLocaleString('pt-BR')} un/mes</td>
+                              <td className="px-4 py-3 text-right font-bold text-yellow-700 bg-yellow-50">{m.myBuy.toLocaleString('pt-BR')} un</td>
+                              <td className="px-4 py-3 text-right font-bold text-green-700 bg-green-50">R$ {m.precoIdeal.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-gray-100 font-bold">
+                            <td className="px-4 py-3">TOTAL</td>
+                            <td className="px-4 py-3 text-right">{rItems.length}</td>
+                            <td className="px-4 py-3 text-right">{totalMercado.toLocaleString('pt-BR')} un/mes</td>
+                            <td className="px-4 py-3 text-right">R$ {avgPrecoGeral.toFixed(2)}</td>
+                            <td className="px-4 py-3 text-right">R$ {totalFatMercado.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                            <td className="px-4 py-3 text-right text-purple-700 bg-purple-50">{myShareTotal.toLocaleString('pt-BR')} un/mes</td>
+                            <td className="px-4 py-3 text-right text-yellow-700 bg-yellow-50">{myBuyTotal.toLocaleString('pt-BR')} un</td>
+                            <td className="px-4 py-3 text-right text-green-700 bg-green-50">R$ {weightedIdeal.toFixed(2)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Seller details */}
+                  <div className="bg-white rounded-xl shadow-sm border p-6">
+                    <h3 className="text-lg font-bold text-gray-800 mb-4">Detalhamento por Vendedor ({rItems.length} concorrentes)</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 border-b">
+                            <th className="text-left px-3 py-2 font-semibold text-gray-600">Vendedor</th>
+                            <th className="text-left px-3 py-2 font-semibold text-gray-600">Marketplace</th>
+                            <th className="text-right px-3 py-2 font-semibold text-gray-600">Vendas/Mes</th>
+                            <th className="text-right px-3 py-2 font-semibold text-gray-600">Preco</th>
+                            <th className="text-right px-3 py-2 font-semibold text-gray-600">Fat. 30d</th>
+                            <th className="text-right px-3 py-2 font-semibold text-gray-600">Visitas</th>
+                            <th className="text-right px-3 py-2 font-semibold text-gray-600">Conv.%</th>
+                            <th className="text-right px-3 py-2 font-semibold text-gray-600">Share%</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rItems.sort((a, b) => (b.media_vendas_mes || 0) - (a.media_vendas_mes || 0)).map((item, idx) => (
+                            <tr key={idx} className="border-b hover:bg-gray-50">
+                              <td className="px-3 py-2 font-medium text-gray-700 max-w-[180px] truncate">{item.fornecedor || item.produto}</td>
+                              <td className="px-3 py-2"><span className={`px-1.5 py-0.5 rounded text-xs font-medium ${item.plataforma === 'Mercado Livre' ? 'bg-yellow-100 text-yellow-700' : item.plataforma === 'Shopee' ? 'bg-orange-100 text-orange-700' : item.plataforma === 'Amazon' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>{item.plataforma === 'Mercado Livre' ? 'ML' : item.plataforma}</span></td>
+                              <td className="px-3 py-2 text-right font-medium">{item.media_vendas_mes || 0}</td>
+                              <td className="px-3 py-2 text-right">R$ {Number(item.preco_venda || 0).toFixed(2)}</td>
+                              <td className="px-3 py-2 text-right text-gray-600">{item.faturamento_30d ? `R$ ${Number(item.faturamento_30d).toLocaleString('pt-BR')}` : '-'}</td>
+                              <td className="px-3 py-2 text-right text-gray-600">{item.visitas ? Number(item.visitas).toLocaleString('pt-BR') : '-'}</td>
+                              <td className="px-3 py-2 text-right text-gray-600">{item.conversao ? `${Number(item.conversao).toFixed(1)}%` : '-'}</td>
+                              <td className="px-3 py-2 text-right text-gray-600">{item.share_mercado ? `${Number(item.share_mercado).toFixed(1)}%` : '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })() : (
+          <>
+            {/* Filters */}
+            <div className="bg-white rounded-xl p-4 shadow-sm border flex flex-wrap gap-3 items-center">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input type="text" placeholder="Buscar produto ou fornecedor..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E] focus:border-transparent" />
+              </div>
+              <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E]">
+                <option value="todos">Todos Status</option>
+                {statusOpts.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+              {grupos.length > 0 && (
+                <select value={filterGrupo} onChange={e => setFilterGrupo(e.target.value)} className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E]">
+                  <option value="todos">Todos Grupos</option>
+                  {grupos.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              )}
+            </div>
+
+            {/* ML Upload hint */}
+            {activeSubTab === 'ml' && filtered.length === 0 && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6 text-center">
+                <Upload size={40} className="mx-auto text-yellow-500 mb-3" />
+                <h3 className="text-lg font-semibold text-yellow-800">Importar dados do Nubimetrics</h3>
+                <p className="text-sm text-yellow-600 mt-1 mb-4">Exporte o historico de vendas dos concorrentes do Nubimetrics (.xlsx ou .csv) e importe aqui.<br/>O sistema detecta automaticamente as colunas e extrapola vendas diarias para media mensal (30 dias).</p>
+                <label className="inline-flex items-center gap-2 px-6 py-3 bg-yellow-500 text-white rounded-xl hover:bg-yellow-600 transition-colors cursor-pointer font-medium">
+                  <Upload size={18} /> Selecionar arquivo Excel/CSV
+                  <input type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleCsvUpload} className="hidden" />
+                </label>
+              </div>
+            )}
+
+            {/* Table */}
+            {filtered.length === 0 && activeSubTab !== 'ml' ? (
+              <div className="bg-white rounded-xl p-12 shadow-sm border text-center">
+                <Compass size={48} className="mx-auto text-gray-300 mb-4" />
+                <h3 className="text-lg font-semibold text-gray-600">Nenhuma oportunidade em {activeSubTab === 'shopee' ? 'Shopee' : activeSubTab === 'amazon' ? 'Amazon' : 'nenhuma plataforma'}</h3>
+                <p className="text-sm text-gray-400 mt-1">Clique em "Nova Oportunidade" para adicionar manualmente</p>
+              </div>
+            ) : filtered.length > 0 && (
+              <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 border-b">
+                        <th className="text-left px-4 py-3 font-semibold text-gray-600">Produto</th>
+                        <th className="text-left px-4 py-3 font-semibold text-gray-600">Fornecedor</th>
+                        {activeSubTab === 'todos' && <th className="text-left px-4 py-3 font-semibold text-gray-600">Plataforma</th>}
+                        <th className="text-right px-4 py-3 font-semibold text-gray-600">Preco Venda</th>
+                        <th className="text-right px-4 py-3 font-semibold text-gray-600">Vendas/Mes</th>
+                        <th className="text-right px-4 py-3 font-semibold text-gray-600">Fat. 30d</th>
+                        <th className="text-right px-4 py-3 font-semibold text-gray-600">Visitas</th>
+                        <th className="text-right px-4 py-3 font-semibold text-gray-600">Conv.%</th>
+                        <th className="text-right px-4 py-3 font-semibold text-gray-600">Share%</th>
+                        <th className="text-right px-4 py-3 font-semibold text-gray-600">Preco Ideal</th>
+                        <th className="text-right px-4 py-3 font-semibold text-gray-600">Margem</th>
+                        <th className="text-center px-4 py-3 font-semibold text-gray-600">Status</th>
+                        <th className="text-center px-4 py-3 font-semibold text-gray-600">Acoes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map(item => {
+                        const margem = calcMargem(item);
+                        const fat = calcFaturamento(item);
+                        return (
+                          <tr key={item.id} className="border-b hover:bg-gray-50 transition-colors">
+                            <td className="px-4 py-3 font-medium text-gray-800 max-w-[250px] truncate" title={item.produto}>{item.produto}</td>
+                            <td className="px-4 py-3 text-gray-600">{item.fornecedor || '-'}</td>
+                            {activeSubTab === 'todos' && <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${item.plataforma === 'Mercado Livre' ? 'bg-yellow-100 text-yellow-700' : item.plataforma === 'Shopee' ? 'bg-orange-100 text-orange-700' : item.plataforma === 'Amazon' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>{item.plataforma || '-'}</span></td>}
+                            <td className="px-4 py-3 text-right font-medium">{item.preco_venda ? `R$ ${Number(item.preco_venda).toFixed(2)}` : '-'}</td>
+                            <td className="px-4 py-3 text-right">{item.media_vendas_mes || '-'}</td>
+                            <td className="px-4 py-3 text-right text-gray-600">{item.faturamento_30d ? `R$ ${Number(item.faturamento_30d).toLocaleString('pt-BR')}` : '-'}</td>
+                            <td className="px-4 py-3 text-right text-gray-600">{item.visitas ? Number(item.visitas).toLocaleString('pt-BR') : '-'}</td>
+                            <td className="px-4 py-3 text-right text-gray-600">{item.conversao ? `${Number(item.conversao).toFixed(1)}%` : '-'}</td>
+                            <td className="px-4 py-3 text-right text-gray-600">{item.share_mercado ? `${Number(item.share_mercado).toFixed(1)}%` : '-'}</td>
+                            <td className="px-4 py-3 text-right font-medium">{item.preco_ideal_pagar ? `R$ ${Number(item.preco_ideal_pagar).toFixed(2)}` : '-'}</td>
+                            <td className={`px-4 py-3 text-right font-bold ${margem && Number(margem) >= 40 ? 'text-green-600' : margem && Number(margem) >= 25 ? 'text-yellow-600' : margem ? 'text-red-600' : 'text-gray-400'}`}>{margem ? `${margem}%` : '-'}</td>
+                            <td className="px-4 py-3 text-center"><span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusStyle(item.status)}`}>{getStatusLabel(item.status)}</span></td>
+                            <td className="px-4 py-3 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <button onClick={() => handleEdit(item)} className="p-1.5 hover:bg-gray-200 rounded-lg text-gray-400 hover:text-blue-600 transition-colors" title="Editar"><Edit2 size={14} /></button>
+                                <button onClick={() => handleDelete(item.id)} className="p-1.5 hover:bg-red-50 rounded-lg text-gray-400 hover:text-red-500 transition-colors" title="Remover"><Trash2 size={14} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* CSV Preview Modal */}
+        {csvPreview && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800">Preview Importacao Nubimetrics</h3>
+                    <p className="text-sm text-gray-500">{csvPreview.fileName} - {csvPreview.data.length} vendedores encontrados (de {csvPreview.totalRows} linhas)</p>
+                    {csvPreview.grupo && <p className="text-xs text-purple-600 font-medium mt-1">Grupo: {csvPreview.grupo}</p>}
+                  </div>
+                  <button onClick={() => setCsvPreview(null)} className="p-2 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
+                </div>
+                {csvPreview.isSummary ? (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800 mb-3">
+                    <strong>Formato resumo (30 dias):</strong> Dados ja consolidados por vendedor. Inclui visitas, conversao e share de mercado.
+                  </div>
+                ) : csvPreview.periodDays && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 mb-3">
+                    <strong>Periodo detectado:</strong> {csvPreview.periodDays} dias de dados. Vendas extrapoladas para 30 dias (x{csvPreview.extrapolationFactor}).
+                  </div>
+                )}
+                <div className="overflow-x-auto max-h-[400px] border rounded-lg">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-gray-50">
+                      <tr className="border-b">
+                        <th className="text-left px-3 py-2 font-semibold text-gray-600">Produto</th>
+                        <th className="text-left px-3 py-2 font-semibold text-gray-600">Vendedor</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-600">Preco</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-600">Vendas/Mes</th>
+                        {csvPreview.isSummary && <th className="text-right px-3 py-2 font-semibold text-gray-600">Fat. R$</th>}
+                        {csvPreview.isSummary && <th className="text-right px-3 py-2 font-semibold text-gray-600">Visitas</th>}
+                        {csvPreview.isSummary && <th className="text-right px-3 py-2 font-semibold text-gray-600">Conv.%</th>}
+                        {csvPreview.isSummary && <th className="text-right px-3 py-2 font-semibold text-gray-600">Share%</th>}
+                        <th className="text-right px-3 py-2 font-semibold text-gray-600">Preco Ideal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {csvPreview.data.slice(0, 50).map((row, i) => (
+                        <tr key={i} className="border-b hover:bg-gray-50">
+                          <td className="px-3 py-2 max-w-[200px] truncate" title={row.produto}>{row.produto}</td>
+                          <td className="px-3 py-2 text-gray-600 max-w-[150px] truncate">{row.fornecedor || '-'}</td>
+                          <td className="px-3 py-2 text-right">R$ {row.preco_venda.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right font-medium">{row.media_vendas_mes}</td>
+                          {csvPreview.isSummary && <td className="px-3 py-2 text-right text-gray-600">R$ {row.faturamento_30d?.toLocaleString('pt-BR')}</td>}
+                          {csvPreview.isSummary && <td className="px-3 py-2 text-right text-gray-600">{row.visitas?.toLocaleString('pt-BR')}</td>}
+                          {csvPreview.isSummary && <td className="px-3 py-2 text-right text-gray-600">{row.conversao?.toFixed(1)}%</td>}
+                          {csvPreview.isSummary && <td className="px-3 py-2 text-right text-gray-600">{row.share_mercado?.toFixed(1)}%</td>}
+                          <td className="px-3 py-2 text-right text-green-700 font-medium">R$ {calcPrecoIdeal(row.preco_venda, 'Mercado Livre')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {csvPreview.data.length > 50 && <p className="text-center text-gray-400 text-sm py-2">... e mais {csvPreview.data.length - 50} produtos</p>}
+                </div>
+                <div className="flex gap-3 mt-4">
+                  <button onClick={() => setCsvPreview(null)} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50">Cancelar</button>
+                  <button onClick={handleImportCsv} disabled={importing} className="flex-1 px-4 py-2.5 bg-yellow-500 text-white rounded-xl hover:bg-yellow-600 disabled:opacity-50 font-medium">
+                    {importing ? 'Importando...' : `Importar ${csvPreview.data.length} produtos`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Form Modal */}
+        {showForm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-bold text-gray-800">{editingItem ? 'Editar Oportunidade' : 'Nova Oportunidade'}</h3>
+                  <button onClick={() => { setShowForm(false); setEditingItem(null); setFormData({ ...emptyForm }); }} className="p-2 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Produto *</label>
+                    <input type="text" value={formData.produto} onChange={e => setFormData({ ...formData, produto: e.target.value })} placeholder="Ex: Kit 6 Tacas Cristal" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E] focus:border-transparent" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Fornecedor</label>
+                    <input type="text" value={formData.fornecedor} onChange={e => setFormData({ ...formData, fornecedor: e.target.value })} placeholder="Ex: Importadora XYZ" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E] focus:border-transparent" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Plataforma</label>
+                    <select value={formData.plataforma} onChange={e => setFormData({ ...formData, plataforma: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E]">
+                      <option value="">Selecionar...</option>
+                      {plataformas.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Preco de Venda (R$)</label>
+                      <input type="number" step="0.01" value={formData.preco_venda} onChange={e => setFormData({ ...formData, preco_venda: e.target.value })} placeholder="0.00" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E] focus:border-transparent" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Media Vendas/Mes</label>
+                      <input type="number" value={formData.media_vendas_mes} onChange={e => setFormData({ ...formData, media_vendas_mes: e.target.value })} placeholder="0" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E] focus:border-transparent" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Faturamento 30d (R$)</label>
+                      <input type="number" step="0.01" value={formData.faturamento_30d} onChange={e => setFormData({ ...formData, faturamento_30d: e.target.value })} placeholder="0.00" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E] focus:border-transparent" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Visitas</label>
+                      <input type="number" value={formData.visitas} onChange={e => setFormData({ ...formData, visitas: e.target.value })} placeholder="0" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E] focus:border-transparent" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Conversao (%)</label>
+                      <input type="number" step="0.1" value={formData.conversao} onChange={e => setFormData({ ...formData, conversao: e.target.value })} placeholder="0.0" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E] focus:border-transparent" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Share Mercado (%)</label>
+                      <input type="number" step="0.1" value={formData.share_mercado} onChange={e => setFormData({ ...formData, share_mercado: e.target.value })} placeholder="0.0" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E] focus:border-transparent" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Preco Ideal a Pagar (R$)</label>
+                    <div className="flex gap-2 items-center">
+                      <input type="number" step="0.01" value={formData.preco_ideal_pagar} onChange={e => setFormData({ ...formData, preco_ideal_pagar: e.target.value })} placeholder="0.00" className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E] focus:border-transparent" />
+                      {formData.preco_venda && formData.plataforma && (
+                        <button type="button" onClick={() => setFormData({ ...formData, preco_ideal_pagar: calcPrecoIdeal(Number(formData.preco_venda), formData.plataforma) })} className="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-xs font-medium hover:bg-green-200 whitespace-nowrap" title="Calcula automaticamente com margem 30%">Auto</button>
+                      )}
+                    </div>
+                    {formData.preco_venda && formData.preco_ideal_pagar && (
+                      <p className={`text-xs mt-1 font-medium ${((formData.preco_venda - formData.preco_ideal_pagar) / formData.preco_venda * 100) >= 40 ? 'text-green-600' : ((formData.preco_venda - formData.preco_ideal_pagar) / formData.preco_venda * 100) >= 25 ? 'text-yellow-600' : 'text-red-600'}`}>
+                        Margem estimada: {((formData.preco_venda - formData.preco_ideal_pagar) / formData.preco_venda * 100).toFixed(1)}%
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Link de Referencia</label>
+                    <input type="url" value={formData.link_referencia} onChange={e => setFormData({ ...formData, link_referencia: e.target.value })} placeholder="https://..." className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E] focus:border-transparent" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Status</label>
+                    <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E]">
+                      {statusOpts.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Observacoes</label>
+                    <textarea value={formData.observacoes} onChange={e => setFormData({ ...formData, observacoes: e.target.value })} rows={3} placeholder="Notas sobre o produto, concorrencia, diferenciais..." className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#6B1B8E] focus:border-transparent" />
+                  </div>
+                </div>
+                <div className="flex gap-3 mt-6">
+                  <button onClick={() => { setShowForm(false); setEditingItem(null); setFormData({ ...emptyForm }); }} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 transition-colors">Cancelar</button>
+                  <button onClick={handleSave} disabled={!formData.produto} className="flex-1 px-4 py-2.5 bg-[#6B1B8E] text-white rounded-xl hover:bg-[#5a1578] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Salvar</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Route renderer
   const renderContent = () => {
     switch (activeTab) {
@@ -5611,6 +6525,7 @@ const App = () => {
       case 'pedidos': return <PedidoFornecedorView />;
       case 'marketing': return <MarketingView />;
       case 'gestao_anuncios': return <GestaoAnunciosView />;
+      case 'oportunidades': return <OportunidadesView />;
       case 'fulfillment': return <FulfillmentView />;
       case 'precificacao': return <PrecificacaoView />;
       case 'analisevendas': return <AnaliseVendasView />;
@@ -5667,7 +6582,7 @@ const App = () => {
             >
               <Menu size={24} />
             </button>
-            <h1 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('aguamarinha', 'Agua Marinha').replace('gestao_anuncios', 'Gestao de Produtos Parados').replace('analisevendas', 'Analise de Vendas')}</h1>
+            <h1 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('aguamarinha', 'Agua Marinha').replace('gestao_anuncios', 'Gestao de Produtos Parados').replace('oportunidades', 'Oportunidades').replace('analisevendas', 'Analise de Vendas')}</h1>
           </div>
 
           <div className="flex items-center gap-6">
