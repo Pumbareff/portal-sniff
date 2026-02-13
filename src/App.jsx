@@ -3938,7 +3938,14 @@ const App = () => {
       setSyncing(false);
     };
 
-    // NO auto-fetch on mount - user must click button
+    // Auto-load 30-day summary from pre-computed view (instant, zero API calls)
+    const [quickSummary, setQuickSummary] = useState(null);
+    useEffect(() => {
+      fetch('/api/baselinker/dashboard-summary')
+        .then(r => r.json())
+        .then(d => { if (d.success && !d.empty) setQuickSummary(d); })
+        .catch(() => {});
+    }, []);
 
     const fmt = (v) => `R$ ${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
     const fmtNum = (v) => Number(v || 0).toLocaleString('pt-BR');
@@ -4114,13 +4121,79 @@ const App = () => {
           </button>
         </div>
 
-        {/* Empty State - before first search */}
+        {/* Quick Summary (auto-loaded from view) or Empty State */}
         {!hasSearched && !loading && (
-          <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl p-12 text-center">
-            <BarChart3 size={48} className="mx-auto text-gray-300 mb-4" />
-            <h3 className="text-lg font-bold text-gray-600 mb-2">Selecione os filtros e clique em Buscar</h3>
-            <p className="text-sm text-gray-400">Escolha o periodo, marketplace e empresa para visualizar os dados de faturamento.</p>
-          </div>
+          quickSummary ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-500 flex items-center gap-2">
+                  <Clock size={14} /> Resumo automatico dos ultimos 30 dias
+                  {quickSummary.cacheAgeMinutes != null && (
+                    <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">
+                      cache {quickSummary.cacheAgeMinutes}min atras
+                    </span>
+                  )}
+                </p>
+                <p className="text-xs text-gray-400">Use os filtros acima para analise detalhada</p>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                  <p className="text-xs font-bold text-gray-400 uppercase">Faturamento 30d</p>
+                  <p className="text-2xl font-black text-[#6B1B8E] mt-1">{fmt(quickSummary.summary.totalRevenue)}</p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                  <p className="text-xs font-bold text-gray-400 uppercase">Pedidos</p>
+                  <p className="text-2xl font-black text-gray-800 mt-1">{fmtNum(quickSummary.summary.totalOrders)}</p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                  <p className="text-xs font-bold text-gray-400 uppercase">Ticket Medio</p>
+                  <p className="text-2xl font-black text-green-600 mt-1">{fmt(quickSummary.summary.avgTicket)}</p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                  <p className="text-xs font-bold text-gray-400 uppercase">Unidades</p>
+                  <p className="text-2xl font-black text-gray-800 mt-1">{fmtNum(quickSummary.summary.totalUnits)}</p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                  <p className="text-xs font-bold text-gray-400 uppercase">% Full</p>
+                  <p className="text-2xl font-black text-blue-600 mt-1">{quickSummary.summary.fullPercentage}%</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
+                  <h4 className="font-bold text-gray-700 text-sm mb-3 flex items-center gap-2"><Target size={16} className="text-[#6B1B8E]" /> Por Marketplace</h4>
+                  <div className="space-y-2">
+                    {Object.entries(quickSummary.byMarketplace).sort((a, b) => b[1].revenue - a[1].revenue).map(([mp, s]) => (
+                      <div key={mp} className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: mpColors[mp] || '#999' }}></div>
+                        <span className="text-sm font-medium capitalize flex-1">{mp}</span>
+                        <span className="text-sm font-black text-[#6B1B8E]">{fmt(s.revenue)}</span>
+                        <span className="text-xs text-gray-400">{s.orders} ped.</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
+                  <h4 className="font-bold text-gray-700 text-sm mb-3 flex items-center gap-2"><Users size={16} className="text-[#6B1B8E]" /> Por Empresa</h4>
+                  <div className="space-y-2">
+                    {Object.entries(quickSummary.byCompany).sort((a, b) => b[1].revenue - a[1].revenue).map(([comp, s]) => (
+                      <div key={comp} className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: companyColors[comp] || '#999' }}></div>
+                        <span className="text-sm font-medium capitalize flex-1">{comp.replace('_', ' ')}</span>
+                        <span className="text-sm font-black text-[#6B1B8E]">{fmt(s.revenue)}</span>
+                        <span className="text-xs text-gray-400">{s.orders} ped.</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl p-12 text-center">
+              <BarChart3 size={48} className="mx-auto text-gray-300 mb-4" />
+              <h3 className="text-lg font-bold text-gray-600 mb-2">Selecione os filtros e clique em Buscar</h3>
+              <p className="text-sm text-gray-400">Escolha o periodo, marketplace e empresa para visualizar os dados de faturamento.</p>
+            </div>
+          )
         )}
 
         {error && (
