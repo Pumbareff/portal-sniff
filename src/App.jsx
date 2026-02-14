@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import DefesaCatalogo from './components/defesa/DefesaCatalogo';
 import {
   LayoutDashboard,
   GraduationCap,
@@ -2288,78 +2289,7 @@ const App = () => {
           );
 
         case 'defesa':
-          return (
-            <div className="space-y-4 animate-fadeIn">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold flex items-center gap-2"><ShieldCheck className="text-green-500" /> Defesa de Catalogo</h3>
-                <button onClick={() => setShowDefesaModal(true)} className="flex items-center gap-1 bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-700"><Flag size={14} /> Registrar Invasao</button>
-              </div>
-              {/* Status filter */}
-              <div className="flex gap-2">
-                {['todos', 'pendente', 'denunciado', 'resolvido'].map(f => (
-                  <button key={f} onClick={() => setDefesaFilter(f)} className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${defesaFilter === f ? 'bg-[#6B1B8E] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{f === 'todos' ? 'Todos' : f.charAt(0).toUpperCase() + f.slice(1)}</button>
-                ))}
-              </div>
-              {/* Table */}
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="border-b border-gray-100">
-                    <th className="text-left p-3 text-xs font-bold text-gray-500">Data</th>
-                    <th className="text-left p-3 text-xs font-bold text-gray-500">Produto</th>
-                    <th className="text-left p-3 text-xs font-bold text-gray-500">Tipo</th>
-                    <th className="text-left p-3 text-xs font-bold text-gray-500">Invasor</th>
-                    <th className="text-left p-3 text-xs font-bold text-gray-500">Status</th>
-                    <th className="text-left p-3 text-xs font-bold text-gray-500">Acoes</th>
-                  </tr></thead>
-                  <tbody>
-                    {amDefesa.filter(d => defesaFilter === 'todos' || d.status === defesaFilter).map(d => (
-                      <tr key={d.id} className="border-b border-gray-50 hover:bg-gray-50">
-                        <td className="p-3 text-xs text-gray-500">{new Date(d.created_at).toLocaleDateString('pt-BR')}</td>
-                        <td className="p-3 font-bold text-xs">{d.produto_nome}<br/><span className="text-gray-400 font-normal">{d.codigo_mlc}</span></td>
-                        <td className="p-3 text-xs">{tipoLabels[d.tipo] || d.tipo}</td>
-                        <td className="p-3 text-xs">{d.nome_invasor || '-'}</td>
-                        <td className="p-3"><span className={`text-[10px] font-bold px-2 py-1 rounded-full ${defesaStatusColors[d.status]}`}>{d.status}</span></td>
-                        <td className="p-3">
-                          {d.status === 'pendente' && <button onClick={() => updateDefesaStatus(d.id, 'denunciado')} className="text-[10px] font-bold bg-yellow-100 text-yellow-700 px-2 py-1 rounded hover:bg-yellow-200">Denunciar</button>}
-                          {d.status === 'denunciado' && <button onClick={() => updateDefesaStatus(d.id, 'resolvido')} className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200">Resolver</button>}
-                        </td>
-                      </tr>
-                    ))}
-                    {amDefesa.filter(d => defesaFilter === 'todos' || d.status === defesaFilter).length === 0 && (
-                      <tr><td colSpan={6} className="p-8 text-center text-gray-400 text-sm">Nenhuma invasao registrada.</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              {/* Modal Defesa */}
-              {showDefesaModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowDefesaModal(false)}>
-                  <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
-                    <h3 className="text-lg font-bold mb-4">Registrar Invasao</h3>
-                    <div className="space-y-3">
-                      <select value={defesaForm.produto_nome} onChange={e => setDefesaForm({...defesaForm, produto_nome: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none">
-                        <option value="">Selecione o produto</option>
-                        {amProdutos.map(p => <option key={p.id} value={p.nome}>{p.nome} ({p.mlc})</option>)}
-                      </select>
-                      <input placeholder="Codigo MLC do anuncio invasor" value={defesaForm.codigo_mlc} onChange={e => setDefesaForm({...defesaForm, codigo_mlc: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none" />
-                      <select value={defesaForm.tipo} onChange={e => setDefesaForm({...defesaForm, tipo: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none">
-                        <option value="vendedor_novo">Vendedor Novo</option>
-                        <option value="titulo_alterado">Titulo Alterado</option>
-                        <option value="marca_alterada">Marca Alterada</option>
-                        <option value="info_alterada">Info Alterada</option>
-                      </select>
-                      <input placeholder="Nome do Invasor" value={defesaForm.nome_invasor} onChange={e => setDefesaForm({...defesaForm, nome_invasor: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none" />
-                      <textarea placeholder="Descricao" rows={2} value={defesaForm.descricao} onChange={e => setDefesaForm({...defesaForm, descricao: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none" />
-                    </div>
-                    <div className="flex gap-2 mt-4">
-                      <button onClick={() => setShowDefesaModal(false)} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm font-bold hover:bg-gray-50">Cancelar</button>
-                      <button onClick={handleAddDefesa} className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700">Registrar</button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
+          return <DefesaCatalogo user={user} profile={profile} supabase={supabase} />;
 
         case 'tracker':
           const clipsMeta = 200;
