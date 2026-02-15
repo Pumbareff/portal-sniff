@@ -5652,6 +5652,7 @@ const App = () => {
                 <tr className="text-left text-xs font-semibold text-white uppercase" style={{ backgroundColor: COLORS.purple }}>
                   <th className="px-4 py-3">ID Envio</th>
                   <th className="px-4 py-3">Marketplace</th>
+                  <th className="px-4 py-3">Loja</th>
                   <th className="px-4 py-3">Produtos Enviados</th>
                   <th className="px-4 py-3">Qtd</th>
                   <th className="px-4 py-3">Custo Envio</th>
@@ -5663,11 +5664,18 @@ const App = () => {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">Nenhum envio encontrado</td></tr>
+                  <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-400">Nenhum envio encontrado</td></tr>
                 ) : filtered.map(envio => (
                   <tr key={envio.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium text-sm" style={{ color: COLORS.purple }}>{envio.numero_envio}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{envio.marketplace}</td>
+                    <td className="px-4 py-3 text-sm">
+                      {(() => {
+                        const loja = getLojaFromMarketplace(envio.marketplace);
+                        const lojaColors = { 'Sniff': 'bg-purple-100 text-purple-700', 'Casa Ipiranga': 'bg-blue-100 text-blue-700', 'RomoBR': 'bg-orange-100 text-orange-700', 'Inovate': 'bg-green-100 text-green-700', 'Outro': 'bg-gray-100 text-gray-600' };
+                        return <span className={`px-2 py-1 rounded-full text-xs font-medium ${lojaColors[loja] || lojaColors['Outro']}`}>{loja}</span>;
+                      })()}
+                    </td>
                     <td className="px-4 py-3 text-sm">
                       <div className="flex flex-wrap gap-1">
                         {(envio.skus || []).map((sku, i) => (
