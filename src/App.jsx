@@ -3874,10 +3874,11 @@ const App = () => {
       }
 
       if (searchTerm) {
-        const term = searchTerm.toLowerCase();
+        const strip = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        const term = strip(searchTerm);
         result = result.filter(p =>
-          (p.sku && p.sku.toLowerCase().includes(term)) ||
-          (p.name && p.name.toLowerCase().includes(term))
+          (p.sku && strip(p.sku).includes(term)) ||
+          (p.name && strip(p.name).includes(term))
         );
       }
 
