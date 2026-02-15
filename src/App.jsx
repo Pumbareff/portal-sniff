@@ -459,6 +459,11 @@ const App = () => {
     const [showCreateUser, setShowCreateUser] = useState(false);
     const [newUserData, setNewUserData] = useState({ email: '', password: '', full_name: '' });
     const [createUserMsg, setCreateUserMsg] = useState('');
+    const [showEditUserModal, setShowEditUserModal] = useState(false);
+    const [editUserData, setEditUserData] = useState({ id: '', email: '', password: '', full_name: '' });
+    const [editUserMsg, setEditUserMsg] = useState('');
+    const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+    const [deleteMsg, setDeleteMsg] = useState('');
 
     const handleCreateUser = async () => {
       setCreateUserMsg('');
@@ -494,6 +499,59 @@ const App = () => {
         setTimeout(() => { setShowCreateUser(false); setCreateUserMsg(''); }, 1500);
       } catch (err) {
         setCreateUserMsg('Erro inesperado: ' + err.message);
+      }
+    };
+
+    const handleEditUser = async () => {
+      setEditUserMsg('');
+      if (!editUserData.email) {
+        setEditUserMsg('Email e obrigatorio');
+        return;
+      }
+      if (editUserData.password && editUserData.password.length < 6) {
+        setEditUserMsg('Senha deve ter no minimo 6 caracteres');
+        return;
+      }
+      try {
+        const body = { user_id: editUserData.id, email: editUserData.email, full_name: editUserData.full_name };
+        if (editUserData.password) body.password = editUserData.password;
+        const response = await fetch('/api/admin-user', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          setEditUserMsg('Erro: ' + (result.error || 'Falha ao atualizar'));
+          return;
+        }
+        setEditUserMsg('Usuario atualizado com sucesso!');
+        const { data: profiles } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+        if (profiles) setAllProfiles(profiles);
+        setTimeout(() => { setShowEditUserModal(false); setEditUserMsg(''); }, 1500);
+      } catch (err) {
+        setEditUserMsg('Erro inesperado: ' + err.message);
+      }
+    };
+
+    const handleDeleteUser = async (profileId) => {
+      setDeleteMsg('');
+      try {
+        const response = await fetch('/api/admin-user', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: profileId })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          setDeleteMsg('Erro: ' + (result.error || 'Falha ao excluir'));
+          return;
+        }
+        setDeleteConfirmId(null);
+        const { data: profiles } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+        if (profiles) setAllProfiles(profiles);
+      } catch (err) {
+        setDeleteMsg('Erro inesperado: ' + err.message);
       }
     };
 
@@ -695,6 +753,24 @@ const App = () => {
                             <Eye size={18} />
                           </button>
                         )}
+                        {prof.role !== 'admin' && (
+                          <>
+                            <button
+                              onClick={() => { setEditUserData({ id: prof.id, email: prof.email || '', password: '', full_name: prof.full_name || '' }); setEditUserMsg(''); setShowEditUserModal(true); }}
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Editar Usuario"
+                            >
+                              <Edit2 size={18} />
+                            </button>
+                            <button
+                              onClick={() => { setDeleteConfirmId(prof.id); setDeleteMsg(''); }}
+                              className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Excluir Usuario"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -703,6 +779,81 @@ const App = () => {
             </table>
           </div>
         </div>
+
+        {/* Edit User Modal */}
+        {showEditUserModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowEditUserModal(false)}>
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+              <h3 className="text-lg font-bold text-[#6B1B8E] mb-4">Editar Usuario</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nome Completo</label>
+                  <input type="text" value={editUserData.full_name} onChange={e => setEditUserData({ ...editUserData, full_name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-200 focus:border-[#6B1B8E] outline-none"
+                    placeholder="Nome do funcionario" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Email</label>
+                  <input type="email" value={editUserData.email} onChange={e => setEditUserData({ ...editUserData, email: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-200 focus:border-[#6B1B8E] outline-none"
+                    placeholder="email@empresa.com.br" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nova Senha (deixe vazio para manter)</label>
+                  <input type="password" value={editUserData.password} onChange={e => setEditUserData({ ...editUserData, password: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-200 focus:border-[#6B1B8E] outline-none"
+                    placeholder="Minimo 6 caracteres" />
+                </div>
+                {editUserMsg && (
+                  <p className={`text-sm font-bold ${editUserMsg.includes('sucesso') ? 'text-green-600' : 'text-red-600'}`}>
+                    {editUserMsg}
+                  </p>
+                )}
+                <div className="flex gap-2 pt-2">
+                  <button onClick={() => setShowEditUserModal(false)}
+                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-xl font-bold text-sm hover:bg-gray-300">
+                    Cancelar
+                  </button>
+                  <button onClick={handleEditUser}
+                    className="flex-1 px-4 py-2 bg-[#6B1B8E] text-white rounded-xl font-bold text-sm hover:bg-[#5a1676]">
+                    Salvar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {deleteConfirmId && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setDeleteConfirmId(null)}>
+            <div className="bg-white rounded-2xl p-6 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={24} className="text-red-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-800 mb-2">Excluir Usuario?</h3>
+              <p className="text-sm text-gray-500 mb-1">
+                {allProfiles.find(p => p.id === deleteConfirmId)?.email}
+              </p>
+              <p className="text-sm text-gray-500 mb-4">
+                Esta acao e irreversivel. O usuario perdera todo o acesso.
+              </p>
+              {deleteMsg && (
+                <p className="text-sm font-bold text-red-600 mb-3">{deleteMsg}</p>
+              )}
+              <div className="flex gap-2">
+                <button onClick={() => setDeleteConfirmId(null)}
+                  className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-xl font-bold text-sm hover:bg-gray-300">
+                  Cancelar
+                </button>
+                <button onClick={() => handleDeleteUser(deleteConfirmId)}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700">
+                  Excluir
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showPermissionsModal && editingProfile && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
