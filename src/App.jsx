@@ -3699,50 +3699,113 @@ const App = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('all');
     const [currentPage, setCurrentPage] = useState(1);
-    const [editingCell, setEditingCell] = useState(null);
-    const [editValue, setEditValue] = useState('');
     const [sortField, setSortField] = useState('sku');
     const [sortDir, setSortDir] = useState('asc');
+    const [activeMarketplace, setActiveMarketplace] = useState('mercadolivre');
+    const [showConfig, setShowConfig] = useState(false);
+    const [showHidden, setShowHidden] = useState(false);
+    const [showAddForm, setShowAddForm] = useState(false);
+    const [newSku, setNewSku] = useState('');
+    const [newName, setNewName] = useState('');
+    const [newCost, setNewCost] = useState('');
     const ITEMS_PER_PAGE = 50;
 
-    const mktList = [
-      { key: 'ml', name: 'Mercado Livre', color: '#FFE600', short: 'ML' },
-      { key: 'shopee', name: 'Shopee', color: '#EE4D2D', short: 'SHP' },
-      { key: 'amazon', name: 'Amazon', color: '#FF9900', short: 'AMZ' },
-      { key: 'tiktok', name: 'TikTok', color: '#69C9D0', short: 'TIK' },
-      { key: 'temu', name: 'Temu', color: '#F54B24', short: 'TMU' },
-      { key: 'shein', name: 'Shein', color: '#222222', short: 'SHN' },
-    ];
+    // Marketplace configs (same as old calculator)
+    const defaultConfigs = {
+      mercadolivre: { nome: 'Mercado Livre', cor: '#FFE600', imposto: 11, comissao: 11.5, freteBaixo: 6.50, freteAlto: 20.00, limiarFrete: 79 },
+      shopee: { nome: 'Shopee', cor: '#EE4D2D', imposto: 11, comissao: 14, freteBaixo: 5.00, freteAlto: 15.00, limiarFrete: 49 },
+      amazon: { nome: 'Amazon', cor: '#FF9900', imposto: 11, comissao: 15, freteBaixo: 8.00, freteAlto: 22.00, limiarFrete: 99 },
+      tiktok: { nome: 'TikTok Shop', cor: '#69C9D0', imposto: 11, comissao: 8, freteBaixo: 5.00, freteAlto: 12.00, limiarFrete: 59 },
+      temu: { nome: 'Temu', cor: '#F54B24', imposto: 11, comissao: 12, freteBaixo: 0, freteAlto: 0, limiarFrete: 0 },
+      shein: { nome: 'Shein', cor: '#222222', imposto: 11, comissao: 20, freteBaixo: 0, freteAlto: 0, limiarFrete: 0 },
+    };
 
-    // Marketplace prices persisted in localStorage
-    const [mktPrices, setMktPrices] = useState(() => {
+    const [mktConfigs, setMktConfigs] = useState(() => {
       try {
-        const saved = localStorage.getItem('portal-sniff-mkt-prices');
-        return saved ? JSON.parse(saved) : {};
-      } catch { return {}; }
+        const saved = localStorage.getItem('portal-sniff-marketplace-configs');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          // Merge with defaults to add any new marketplaces
+          return { ...defaultConfigs, ...parsed };
+        }
+        return defaultConfigs;
+      } catch { return defaultConfigs; }
     });
 
     useEffect(() => {
-      localStorage.setItem('portal-sniff-mkt-prices', JSON.stringify(mktPrices));
-    }, [mktPrices]);
+      localStorage.setItem('portal-sniff-marketplace-configs', JSON.stringify(mktConfigs));
+    }, [mktConfigs]);
 
-    // Parse SKU type: kit, combo, simple, simple_with_kits (hidden)
+    // Hidden SKUs (excluded from view)
+    const [hiddenSkus, setHiddenSkus] = useState(() => {
+      try {
+        const saved = localStorage.getItem('portal-sniff-hidden-skus');
+        return saved ? JSON.parse(saved) : [];
+      } catch { return []; }
+    });
+
+    useEffect(() => {
+      localStorage.setItem('portal-sniff-hidden-skus', JSON.stringify(hiddenSkus));
+    }, [hiddenSkus]);
+
+    // Custom products (manually added)
+    const [customProducts, setCustomProducts] = useState(() => {
+      try {
+        const saved = localStorage.getItem('portal-sniff-custom-products');
+        return saved ? JSON.parse(saved) : [];
+      } catch { return []; }
+    });
+
+    useEffect(() => {
+      localStorage.setItem('portal-sniff-custom-products', JSON.stringify(customProducts));
+    }, [customProducts]);
+
+    const config = mktConfigs[activeMarketplace];
+
+    const updateConfig = (field, value) => {
+      setMktConfigs(prev => ({
+        ...prev,
+        [activeMarketplace]: { ...prev[activeMarketplace], [field]: Number(value) }
+      }));
+    };
+
+    // Price tiers
+    const tiers = [
+      { key: 'ataque', nome: 'Ataque', desc: '0-10%', mcMin: 0, mcMid: 5, mcMax: 10, bgHead: 'bg-red-500/80', bgCell: 'bg-red-50', textHead: 'text-white', textPrice: 'text-red-700' },
+      { key: 'estruturacao', nome: 'Estruturacao', desc: '10-15%', mcMin: 10, mcMid: 12.5, mcMax: 15, bgHead: 'bg-amber-500/80', bgCell: 'bg-amber-50', textHead: 'text-white', textPrice: 'text-amber-700' },
+      { key: 'estabilidade', nome: 'Estabilidade', desc: '15-30%', mcMin: 15, mcMid: 22.5, mcMax: 30, bgHead: 'bg-green-500/80', bgCell: 'bg-green-50', textHead: 'text-white', textPrice: 'text-green-700' },
+    ];
+
+    // Price calculation (same formula as old calculator)
+    const calcPreco = (custo, margemAlvo) => {
+      if (!custo || Number(custo) <= 0 || !config) return null;
+      const c = Number(custo);
+      const divisor = 1 - (config.imposto / 100) - (config.comissao / 100) - (margemAlvo / 100);
+      if (divisor <= 0) return null;
+
+      const pvBaixo = (c + config.freteBaixo) / divisor;
+      const pvAlto = (c + config.freteAlto) / divisor;
+
+      if (config.limiarFrete === 0 || pvBaixo >= config.limiarFrete) {
+        return pvAlto;
+      }
+      return pvBaixo;
+    };
+
+    // Parse SKU type
     const parseProductType = (sku, allSkus) => {
       if (!sku) return { type: 'simple', label: 'Simples', baseSku: sku, mult: null };
       const upper = sku.toUpperCase();
 
-      // XXXKITn pattern (e.g. F0585KIT4, 455KIT6)
       const kitMatch = upper.match(/^(.+?)KIT(\d+)$/);
       if (kitMatch) {
         return { type: 'kit', label: 'Kit x' + kitMatch[2], baseSku: kitMatch[1], mult: parseInt(kitMatch[2]) };
       }
 
-      // Starts with KIT but not XXXKITn (e.g. KITDIAMOND1) -> combo
       if (upper.startsWith('KIT')) {
         return { type: 'combo', label: 'Combo', baseSku: null, mult: null };
       }
 
-      // Simple - check if it has KIT variants in the list
       const hasKits = allSkus.some(o => {
         const m = o.toUpperCase().match(/^(.+?)KIT(\d+)$/);
         return m && m[1] === upper;
@@ -3755,7 +3818,7 @@ const App = () => {
       return { type: 'simple', label: 'Simples', baseSku: sku, mult: null };
     };
 
-    // Fetch ALL products from BaseLinker (paginated)
+    // Fetch ALL products
     const fetchAllProducts = async () => {
       setLoading(true);
       setProducts([]);
@@ -3782,7 +3845,7 @@ const App = () => {
 
       const allSkus = all.map(p => p.sku).filter(Boolean);
       const processed = all
-        .map(p => ({ ...p, productType: parseProductType(p.sku, allSkus) }))
+        .map(p => ({ ...p, productType: parseProductType(p.sku, allSkus), isCustom: false }))
         .filter(p => p.productType.type !== 'simple_with_kits');
 
       setProducts(processed);
@@ -3791,9 +3854,24 @@ const App = () => {
 
     useEffect(() => { fetchAllProducts(); }, []);
 
+    // All products including custom ones
+    const allProducts = useMemo(() => {
+      const customs = customProducts.map(cp => ({
+        ...cp,
+        productType: { type: 'custom', label: 'Manual', baseSku: cp.sku, mult: null },
+        isCustom: true
+      }));
+      return [...products, ...customs];
+    }, [products, customProducts]);
+
     // Filtered + sorted
     const filteredProducts = useMemo(() => {
-      let result = [...products];
+      let result = [...allProducts];
+
+      // Hide/show hidden
+      if (!showHidden) {
+        result = result.filter(p => !hiddenSkus.includes(p.sku));
+      }
 
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
@@ -3823,7 +3901,7 @@ const App = () => {
       });
 
       return result;
-    }, [products, searchTerm, filterType, sortField, sortDir]);
+    }, [allProducts, searchTerm, filterType, sortField, sortDir, showHidden, hiddenSkus]);
 
     const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
     const paginatedProducts = filteredProducts.slice(
@@ -3831,78 +3909,89 @@ const App = () => {
       currentPage * ITEMS_PER_PAGE
     );
 
-    useEffect(() => { setCurrentPage(1); }, [searchTerm, filterType]);
-
-    // Inline editing
-    const startEdit = (productId, mktKey, currentVal) => {
-      setEditingCell({ productId, mktKey });
-      setEditValue(currentVal || '');
-    };
-
-    const saveEdit = () => {
-      if (!editingCell) return;
-      const { productId, mktKey } = editingCell;
-      const val = parseFloat(editValue);
-      setMktPrices(prev => ({
-        ...prev,
-        [productId]: { ...(prev[productId] || {}), [mktKey]: isNaN(val) ? null : val }
-      }));
-      setEditingCell(null);
-      setEditValue('');
-    };
-
-    const cancelEdit = () => { setEditingCell(null); setEditValue(''); };
+    useEffect(() => { setCurrentPage(1); }, [searchTerm, filterType, showHidden]);
 
     const toggleSort = (field) => {
       if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
       else { setSortField(field); setSortDir('asc'); }
     };
 
+    const toggleHide = (sku) => {
+      setHiddenSkus(prev =>
+        prev.includes(sku) ? prev.filter(s => s !== sku) : [...prev, sku]
+      );
+    };
+
+    const addCustomProduct = () => {
+      if (!newSku || !newName || !newCost) return;
+      const exists = customProducts.some(p => p.sku === newSku) || products.some(p => p.sku === newSku);
+      if (exists) return;
+      setCustomProducts(prev => [...prev, {
+        id: 'custom_' + Date.now(),
+        sku: newSku,
+        name: newName,
+        price1: parseFloat(newCost) || 0,
+        stock: 0,
+        isCustom: true
+      }]);
+      setNewSku('');
+      setNewName('');
+      setNewCost('');
+      setShowAddForm(false);
+    };
+
+    const removeCustomProduct = (sku) => {
+      setCustomProducts(prev => prev.filter(p => p.sku !== sku));
+    };
+
     const fmt = (v) => v != null && !isNaN(v) ? 'R$ ' + Number(v).toFixed(2).replace('.', ',') : '-';
+    const sortIcon = (field) => sortField === field ? (sortDir === 'asc' ? ' \u2191' : ' \u2193') : '';
+
+    const typeBadge = (type) => {
+      switch (type) {
+        case 'kit': return 'bg-purple-100 text-purple-700 border-purple-200';
+        case 'combo': return 'bg-amber-100 text-amber-700 border-amber-200';
+        case 'custom': return 'bg-blue-100 text-blue-700 border-blue-200';
+        default: return 'bg-gray-100 text-gray-600 border-gray-200';
+      }
+    };
 
     // Export CSV
     const exportCSV = () => {
-      const headers = ['SKU', 'Produto', 'Tipo', 'Custo', 'Estoque', ...mktList.map(m => m.name)];
+      const headers = ['SKU', 'Produto', 'Tipo', 'Custo', 'Estoque',
+        config.nome + ' Ataque (5%)', config.nome + ' Estruturacao (12.5%)', config.nome + ' Estabilidade (22.5%)'];
       const rows = filteredProducts.map(p => [
         p.sku,
         '"' + (p.name || '').replace(/"/g, '""') + '"',
         p.productType.label,
         p.price1 || 0,
         p.stock || 0,
-        ...mktList.map(m => (mktPrices[p.id] && mktPrices[p.id][m.key]) || '')
+        calcPreco(p.price1, 5) ? calcPreco(p.price1, 5).toFixed(2) : '',
+        calcPreco(p.price1, 12.5) ? calcPreco(p.price1, 12.5).toFixed(2) : '',
+        calcPreco(p.price1, 22.5) ? calcPreco(p.price1, 22.5).toFixed(2) : ''
       ]);
       const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'precificacao_' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.download = 'precificacao_' + activeMarketplace + '_' + new Date().toISOString().slice(0, 10) + '.csv';
       a.click();
       URL.revokeObjectURL(url);
     };
 
     // Stats
     const stats = useMemo(() => {
-      const total = products.length;
-      const kits = products.filter(p => p.productType.type === 'kit').length;
-      const combos = products.filter(p => p.productType.type === 'combo').length;
-      const simples = products.filter(p => p.productType.type === 'simple').length;
-      const withPrices = products.filter(p => {
-        const pp = mktPrices[p.id];
-        return pp && Object.values(pp).some(v => v != null && v > 0);
-      }).length;
-      return { total, kits, combos, simples, withPrices };
-    }, [products, mktPrices]);
-
-    const typeBadge = (type) => {
-      switch (type) {
-        case 'kit': return 'bg-purple-100 text-purple-700 border-purple-200';
-        case 'combo': return 'bg-amber-100 text-amber-700 border-amber-200';
-        default: return 'bg-gray-100 text-gray-600 border-gray-200';
-      }
-    };
-
-    const sortIcon = (field) => sortField === field ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
+      const visible = allProducts.filter(p => !hiddenSkus.includes(p.sku));
+      return {
+        total: visible.length,
+        kits: visible.filter(p => p.productType.type === 'kit').length,
+        combos: visible.filter(p => p.productType.type === 'combo').length,
+        simples: visible.filter(p => p.productType.type === 'simple').length,
+        custom: customProducts.length,
+        hidden: hiddenSkus.length
+      };
+    }, [allProducts, hiddenSkus, customProducts]);
 
     return (
       <div className="space-y-4">
@@ -3915,11 +4004,11 @@ const App = () => {
                   <DollarSign size={28} className="text-[#F4B942]" />
                   Planilha de Precificacao
                 </h2>
-                <p className="text-purple-200 text-sm mt-1">Todos os produtos BaseLinker com precos por marketplace</p>
+                <p className="text-purple-200 text-sm mt-1">Precos calculados automaticamente por marketplace</p>
               </div>
               <div className="flex items-center gap-3">
                 <button onClick={exportCSV} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-bold flex items-center gap-2 transition-all">
-                  <Download size={16} /> Exportar CSV
+                  <Download size={16} /> CSV
                 </button>
                 <button onClick={fetchAllProducts} disabled={loading} className="px-4 py-2 bg-[#F4B942] hover:bg-[#e5aa33] text-gray-900 rounded-xl text-sm font-black flex items-center gap-2 transition-all disabled:opacity-50">
                   <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> {loading ? 'Carregando...' : 'Atualizar'}
@@ -3928,37 +4017,101 @@ const App = () => {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-5">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mt-5">
               {[
                 { label: 'Total', value: stats.total, bg: 'bg-white/10' },
                 { label: 'Kits', value: stats.kits, bg: 'bg-purple-500/30' },
                 { label: 'Combos', value: stats.combos, bg: 'bg-amber-500/30' },
                 { label: 'Simples', value: stats.simples, bg: 'bg-blue-500/30' },
-                { label: 'Com Preco', value: stats.withPrices, bg: 'bg-green-500/30' },
+                { label: 'Manual', value: stats.custom, bg: 'bg-cyan-500/30' },
+                { label: 'Ocultos', value: stats.hidden, bg: 'bg-gray-500/30' },
               ].map(s => (
-                <div key={s.label} className={s.bg + ' rounded-xl px-4 py-3 text-center'}>
-                  <p className="text-2xl font-black text-white">{loading ? '...' : s.value}</p>
-                  <p className="text-xs text-purple-200 font-bold uppercase">{s.label}</p>
+                <div key={s.label} className={s.bg + ' rounded-xl px-3 py-2.5 text-center'}>
+                  <p className="text-xl font-black text-white">{loading ? '...' : s.value}</p>
+                  <p className="text-[10px] text-purple-200 font-bold uppercase">{s.label}</p>
                 </div>
               ))}
             </div>
           </div>
         </div>
 
+        {/* Marketplace Tabs */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="flex flex-wrap gap-2 mb-3">
+            {Object.entries(mktConfigs).map(([key, mp]) => (
+              <button
+                key={key}
+                onClick={() => setActiveMarketplace(key)}
+                className={'px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ' + (
+                  activeMarketplace === key
+                    ? 'text-white shadow-lg scale-105'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                )}
+                style={activeMarketplace === key ? { backgroundColor: mp.cor, color: ['#FFE600', '#69C9D0', '#FF9900'].includes(mp.cor) ? '#000' : '#fff' } : {}}
+              >
+                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: mp.cor }}></span>
+                {mp.nome}
+              </button>
+            ))}
+          </div>
+
+          {/* Config toggle */}
+          <button
+            onClick={() => setShowConfig(!showConfig)}
+            className="text-xs text-gray-500 hover:text-[#6B1B8E] font-bold flex items-center gap-1 transition-all"
+          >
+            <Settings size={14} />
+            {showConfig ? 'Ocultar parametros' : 'Editar parametros'} de {config.nome}
+            <ChevronDown size={14} className={'transition-transform ' + (showConfig ? 'rotate-180' : '')} />
+          </button>
+
+          {/* Config panel */}
+          {showConfig && (
+            <div className="mt-3 p-4 rounded-xl border border-gray-200 bg-gray-50">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Imposto %</label>
+                  <input type="number" step="0.1" value={config.imposto} onChange={e => updateConfig('imposto', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Comissao %</label>
+                  <input type="number" step="0.1" value={config.comissao} onChange={e => updateConfig('comissao', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Frete Baixo R$</label>
+                  <input type="number" step="0.01" value={config.freteBaixo} onChange={e => updateConfig('freteBaixo', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Frete Alto R$</label>
+                  <input type="number" step="0.01" value={config.freteAlto} onChange={e => updateConfig('freteAlto', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Limiar Frete R$</label>
+                  <input type="number" step="1" value={config.limiarFrete} onChange={e => updateConfig('limiarFrete', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
+                  <p className="text-[9px] text-gray-400 mt-0.5">0 = sem frete gratis</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Toolbar */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="relative flex-1 min-w-[250px]">
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Search */}
+            <div className="relative flex-1 min-w-[220px]">
               <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Buscar por SKU ou nome..."
+                placeholder="Buscar SKU ou nome..."
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-200 outline-none"
               />
             </div>
-            <div className="flex items-center gap-2">
+
+            {/* Type filters */}
+            <div className="flex items-center gap-1.5">
               {[
                 { key: 'all', label: 'Todos' },
                 { key: 'kit', label: 'Kits' },
@@ -3978,8 +4131,54 @@ const App = () => {
                 </button>
               ))}
             </div>
+
+            {/* Show hidden toggle */}
+            <button
+              onClick={() => setShowHidden(!showHidden)}
+              className={'px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ' + (
+                showHidden
+                  ? 'bg-red-100 text-red-700 border border-red-200'
+                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              )}
+            >
+              <Eye size={14} /> {showHidden ? 'Ocultos visiveis' : 'Mostrar ocultos'}
+              {hiddenSkus.length > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{hiddenSkus.length}</span>}
+            </button>
+
+            {/* Add product */}
+            <button
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="px-3 py-2 rounded-xl text-xs font-bold bg-[#6B1B8E] text-white hover:bg-[#5a1678] transition-all flex items-center gap-1.5"
+            >
+              <Plus size={14} /> Adicionar SKU
+            </button>
+
             <span className="text-sm text-gray-500 font-bold">{filteredProducts.length} produtos</span>
           </div>
+
+          {/* Add product form */}
+          {showAddForm && (
+            <div className="mt-3 p-4 rounded-xl border border-purple-200 bg-purple-50 flex items-end gap-3 flex-wrap">
+              <div className="flex-1 min-w-[120px]">
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">SKU</label>
+                <input type="text" value={newSku} onChange={e => setNewSku(e.target.value)} placeholder="Ex: PROD001" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-purple-200" />
+              </div>
+              <div className="flex-[2] min-w-[200px]">
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Nome do Produto</label>
+                <input type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nome completo" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-purple-200" />
+              </div>
+              <div className="w-[120px]">
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Custo R$</label>
+                <input type="number" step="0.01" value={newCost} onChange={e => setNewCost(e.target.value)} placeholder="0.00" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-purple-200" />
+              </div>
+              <button onClick={addCustomProduct} className="px-4 py-2 bg-[#6B1B8E] text-white rounded-lg text-sm font-bold hover:bg-[#5a1678] transition-all">
+                Adicionar
+              </button>
+              <button onClick={() => setShowAddForm(false)} className="px-4 py-2 bg-gray-200 text-gray-600 rounded-lg text-sm font-bold hover:bg-gray-300 transition-all">
+                Cancelar
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Loading */}
@@ -3992,12 +4191,12 @@ const App = () => {
         )}
 
         {/* Spreadsheet */}
-        {!loading && products.length > 0 && (
+        {!loading && allProducts.length > 0 && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-200" style={{ background: 'linear-gradient(135deg, #0d0520, #1a0a2e)' }}>
+                  <tr style={{ background: 'linear-gradient(135deg, #0d0520, #1a0a2e)' }}>
                     <th className="px-3 py-3 text-left text-xs font-bold text-purple-200 uppercase cursor-pointer hover:text-white whitespace-nowrap" onClick={() => toggleSort('sku')}>
                       SKU{sortIcon('sku')}
                     </th>
@@ -4011,73 +4210,74 @@ const App = () => {
                     <th className="px-3 py-3 text-right text-xs font-bold text-purple-200 uppercase cursor-pointer hover:text-white whitespace-nowrap" onClick={() => toggleSort('stock')}>
                       Estoque{sortIcon('stock')}
                     </th>
-                    {mktList.map(m => (
-                      <th key={m.key} className="px-3 py-3 text-center text-xs font-bold uppercase whitespace-nowrap" style={{ color: m.color }}>
-                        <div className="flex items-center justify-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: m.color }}></span>
-                          {m.short}
-                        </div>
+                    {tiers.map(t => (
+                      <th key={t.key} className={'px-3 py-3 text-center text-xs font-bold uppercase whitespace-nowrap ' + t.bgHead + ' ' + t.textHead}>
+                        <div>{t.nome}</div>
+                        <div className="text-[10px] opacity-80 font-normal">{t.desc}</div>
                       </th>
                     ))}
+                    <th className="px-3 py-3 text-center text-xs font-bold text-purple-200 uppercase whitespace-nowrap">Acoes</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedProducts.map((p, idx) => (
-                    <tr key={p.id} className={'border-b border-gray-50 hover:bg-purple-50/50 transition-colors ' + (idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30')}>
-                      <td className="px-3 py-2.5 font-mono text-xs font-bold text-[#6B1B8E] whitespace-nowrap">{p.sku}</td>
-                      <td className="px-3 py-2.5 text-gray-700 max-w-[250px] truncate" title={p.name}>{p.name}</td>
-                      <td className="px-3 py-2.5 text-center">
-                        <span className={'inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ' + typeBadge(p.productType.type)}>
-                          {p.productType.label}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 text-right font-mono text-xs font-bold text-gray-600 whitespace-nowrap">{fmt(p.price1)}</td>
-                      <td className="px-3 py-2.5 text-right font-mono text-xs text-gray-500 whitespace-nowrap">{p.stock}</td>
-                      {mktList.map(m => {
-                        const cellPrice = mktPrices[p.id] && mktPrices[p.id][m.key];
-                        const isEditing = editingCell && editingCell.productId === p.id && editingCell.mktKey === m.key;
-                        const margin = cellPrice && p.price1 ? (((cellPrice - p.price1) / cellPrice) * 100).toFixed(1) : null;
-
-                        return (
-                          <td key={m.key} className="px-1.5 py-1.5 text-center">
-                            {isEditing ? (
-                              <input
-                                type="number"
-                                step="0.01"
-                                value={editValue}
-                                onChange={e => setEditValue(e.target.value)}
-                                onBlur={saveEdit}
-                                onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
-                                autoFocus
-                                className="w-full px-2 py-1 border-2 border-[#6B1B8E] rounded-lg text-xs text-center font-bold outline-none bg-purple-50"
-                                style={{ minWidth: '80px' }}
-                              />
-                            ) : (
-                              <div
-                                onClick={() => startEdit(p.id, m.key, cellPrice)}
-                                className="cursor-pointer px-2 py-1 rounded-lg hover:bg-gray-100 transition-all group"
-                                style={{ minWidth: '80px' }}
-                                title={margin ? 'Margem: ' + margin + '%' : 'Clique para editar'}
+                  {paginatedProducts.map((p, idx) => {
+                    const isHidden = hiddenSkus.includes(p.sku);
+                    return (
+                      <tr key={p.id || p.sku} className={'border-b border-gray-50 transition-colors ' + (isHidden ? 'opacity-40 bg-red-50/30' : idx % 2 === 0 ? 'bg-white hover:bg-purple-50/50' : 'bg-gray-50/30 hover:bg-purple-50/50')}>
+                        <td className="px-3 py-2.5 font-mono text-xs font-bold text-[#6B1B8E] whitespace-nowrap">{p.sku}</td>
+                        <td className="px-3 py-2.5 text-gray-700 max-w-[250px] truncate" title={p.name}>{p.name}</td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className={'inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ' + typeBadge(p.productType.type)}>
+                            {p.productType.label}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono text-xs font-bold text-gray-600 whitespace-nowrap">{fmt(p.price1)}</td>
+                        <td className={'px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap ' + (
+                          (p.stock || 0) <= 0 ? 'text-red-500 font-bold' : (p.stock || 0) <= 10 ? 'text-amber-500 font-bold' : 'text-gray-500'
+                        )}>
+                          {p.stock || 0}
+                        </td>
+                        {tiers.map(t => {
+                          const pvMid = calcPreco(p.price1, t.mcMid);
+                          const pvMin = calcPreco(p.price1, t.mcMax);
+                          const pvMax = calcPreco(p.price1, t.mcMin);
+                          return (
+                            <td key={t.key} className={'px-2 py-2.5 text-center ' + t.bgCell}
+                              title={pvMin && pvMax ? 'Faixa: ' + fmt(pvMin) + ' a ' + fmt(pvMax) : ''}>
+                              <span className={'font-bold text-xs ' + t.textPrice}>
+                                {pvMid ? fmt(pvMid) : '-'}
+                              </span>
+                              {pvMin && pvMax && (
+                                <span className="block text-[9px] text-gray-400">
+                                  {fmt(pvMin)} - {fmt(pvMax)}
+                                </span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="px-2 py-2.5 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => toggleHide(p.sku)}
+                              className={'p-1.5 rounded-lg transition-all ' + (isHidden ? 'bg-green-100 text-green-600 hover:bg-green-200' : 'bg-gray-100 text-gray-400 hover:bg-red-100 hover:text-red-500')}
+                              title={isHidden ? 'Mostrar SKU' : 'Ocultar SKU'}
+                            >
+                              {isHidden ? <Eye size={14} /> : <XCircle size={14} />}
+                            </button>
+                            {p.isCustom && (
+                              <button
+                                onClick={() => removeCustomProduct(p.sku)}
+                                className="p-1.5 rounded-lg bg-red-100 text-red-500 hover:bg-red-200 transition-all"
+                                title="Remover produto manual"
                               >
-                                {cellPrice ? (
-                                  <div>
-                                    <span className="font-bold text-xs text-gray-800">{fmt(cellPrice)}</span>
-                                    {margin && (
-                                      <span className={'block text-[10px] font-bold ' + (Number(margin) >= 20 ? 'text-green-600' : Number(margin) >= 10 ? 'text-amber-600' : 'text-red-500')}>
-                                        {margin}%
-                                      </span>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-300 text-xs group-hover:text-[#6B1B8E]">+ preco</span>
-                                )}
-                              </div>
+                                <Trash2 size={14} />
+                              </button>
                             )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -4130,7 +4330,7 @@ const App = () => {
         )}
 
         {/* Empty state */}
-        {!loading && products.length === 0 && (
+        {!loading && allProducts.length === 0 && (
           <div className="bg-white p-12 rounded-2xl border border-gray-100 shadow-sm text-center">
             <DollarSign size={48} className="mx-auto text-gray-300 mb-4" />
             <p className="text-gray-400 font-bold">Nenhum produto carregado</p>
@@ -4140,12 +4340,12 @@ const App = () => {
 
         {/* Legend */}
         <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
-          <div className="flex items-center gap-6 text-xs text-gray-500 flex-wrap">
-            <span className="font-bold text-gray-700">Legenda:</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500"></span> Margem &ge; 20%</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500"></span> Margem 10-20%</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500"></span> Margem &lt; 10%</span>
-            <span className="ml-auto text-gray-400">Clique em qualquer celula de preco para editar | Precos salvos localmente</span>
+          <div className="flex items-center gap-4 text-xs text-gray-500 flex-wrap">
+            <span className="font-bold text-gray-700">Faixas {config.nome}:</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-100 border border-red-200"></span> Ataque 0-10% (agressivo)</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-100 border border-amber-200"></span> Estruturacao 10-15% (competitivo)</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-green-100 border border-green-200"></span> Estabilidade 15-30% (saudavel)</span>
+            <span className="ml-auto text-gray-400">Imposto: {config.imposto}% | Comissao: {config.comissao}% | Frete: R${config.freteBaixo}-{config.freteAlto}</span>
           </div>
         </div>
       </div>
