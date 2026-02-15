@@ -5439,6 +5439,7 @@ const App = () => {
     const [showForm, setShowForm] = useState(false);
     const [editingEnvio, setEditingEnvio] = useState(null);
     const [activeFilter, setActiveFilter] = useState('todos');
+    const [filterMonth, setFilterMonth] = useState('todos');
     const emptyForm = { numero_envio: '', marketplace: '', skus: '', quantidade: '', custo_envio: '', custo_obs: '', data_criacao: '', data_coleta: '', status: 'em_aberto', observacoes: '' };
     const [formData, setFormData] = useState({ ...emptyForm });
 
@@ -5506,18 +5507,33 @@ const App = () => {
       if (data) setEnvios(prev => prev.map(e => e.id === envio.id ? data[0] : e));
     };
 
-    const filtered = envios.filter(e => {
+    // Build available months from data
+    const availableMonths = useMemo(() => {
+      const months = new Set();
+      envios.forEach(e => {
+        if (e.data_criacao) months.add(e.data_criacao.slice(0, 7));
+      });
+      return Array.from(months).sort().reverse();
+    }, [envios]);
+
+    // Filter by month first, then by status
+    const monthFiltered = envios.filter(e => {
+      if (filterMonth === 'todos') return true;
+      return e.data_criacao && e.data_criacao.startsWith(filterMonth);
+    });
+
+    const filtered = monthFiltered.filter(e => {
       if (activeFilter === 'todos') return true;
       return e.status === activeFilter;
     });
 
     const stats = {
-      total: envios.length,
-      aberto: envios.filter(e => e.status === 'em_aberto').length,
-      coletado: envios.filter(e => e.status === 'coletado').length,
-      problema: envios.filter(e => e.status === 'problema').length,
-      custoTotal: envios.reduce((s, e) => s + (Number(e.custo_envio) || 0), 0),
-      unidadesTotal: envios.reduce((s, e) => s + (Number(e.quantidade) || 0), 0),
+      total: monthFiltered.length,
+      aberto: monthFiltered.filter(e => e.status === 'em_aberto').length,
+      coletado: monthFiltered.filter(e => e.status === 'coletado').length,
+      problema: monthFiltered.filter(e => e.status === 'problema').length,
+      custoTotal: monthFiltered.reduce((s, e) => s + (Number(e.custo_envio) || 0), 0),
+      unidadesTotal: monthFiltered.reduce((s, e) => s + (Number(e.quantidade) || 0), 0),
     };
 
     const statusColors = {
@@ -5559,19 +5575,33 @@ const App = () => {
         </div>
 
         {/* Filters */}
-        <div className="flex gap-2">
-          {[
-            { key: 'todos', label: `Todos ${stats.total}` },
-            { key: 'em_aberto', label: `Em Aberto ${stats.aberto}` },
-            { key: 'coletado', label: `Coletados ${stats.coletado}` },
-            { key: 'problema', label: `Problemas ${stats.problema}` },
-          ].map(f => (
-            <button key={f.key} onClick={() => setActiveFilter(f.key)}
-              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${activeFilter === f.key ? 'text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-              style={activeFilter === f.key ? { backgroundColor: COLORS.purple } : {}}>
-              {f.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex gap-2">
+            {[
+              { key: 'todos', label: `Todos ${stats.total}` },
+              { key: 'em_aberto', label: `Em Aberto ${stats.aberto}` },
+              { key: 'coletado', label: `Coletados ${stats.coletado}` },
+              { key: 'problema', label: `Problemas ${stats.problema}` },
+            ].map(f => (
+              <button key={f.key} onClick={() => setActiveFilter(f.key)}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${activeFilter === f.key ? 'text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                style={activeFilter === f.key ? { backgroundColor: COLORS.purple } : {}}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <Calendar size={16} className="text-gray-400" />
+            <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
+              className="px-3 py-2 rounded-xl text-sm font-medium bg-white border border-gray-200 text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-200 cursor-pointer">
+              <option value="todos">Todos os meses</option>
+              {availableMonths.map(m => {
+                const [y, mo] = m.split('-');
+                const label = new Date(Number(y), Number(mo) - 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+                return <option key={m} value={m}>{label.charAt(0).toUpperCase() + label.slice(1)}</option>;
+              })}
+            </select>
+          </div>
         </div>
 
         {/* Table */}
