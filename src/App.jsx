@@ -3843,6 +3843,20 @@ const App = () => {
         }
       }
 
+      // Fetch real-time stock
+      setLoadProgress({ page: 'estoque', count: all.length });
+      try {
+        const stockRes = await fetch('/api/baselinker/stock');
+        const stockData = await stockRes.json();
+        if (stockData.success && stockData.stock) {
+          const stockMap = {};
+          stockData.stock.forEach(s => { stockMap[s.productId] = s.stock; });
+          all = all.map(p => ({ ...p, stock: stockMap[p.id] != null ? stockMap[p.id] : p.stock }));
+        }
+      } catch (err) {
+        console.error('Stock fetch error:', err);
+      }
+
       const allSkus = all.map(p => p.sku).filter(Boolean);
       const processed = all
         .map(p => ({ ...p, productType: parseProductType(p.sku, allSkus), isCustom: false }))
@@ -3852,7 +3866,7 @@ const App = () => {
       setLoading(false);
     };
 
-    useEffect(() => { fetchAllProducts(); }, []);
+    // No auto-fetch - only when user clicks "Atualizar"
 
     // All products including custom ones
     const allProducts = useMemo(() => {
