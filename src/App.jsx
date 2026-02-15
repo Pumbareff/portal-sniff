@@ -476,7 +476,7 @@ const App = () => {
         return;
       }
       try {
-        const response = await fetch('/api/create-user', {
+        const response = await fetch('/api/admin-user', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
