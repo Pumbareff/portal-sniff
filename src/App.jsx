@@ -5440,6 +5440,8 @@ const App = () => {
     const [editingEnvio, setEditingEnvio] = useState(null);
     const [activeFilter, setActiveFilter] = useState('todos');
     const [filterMonth, setFilterMonth] = useState('todos');
+    const [filterMarketplace, setFilterMarketplace] = useState('todos');
+    const [filterLoja, setFilterLoja] = useState('todos');
     const emptyForm = { numero_envio: '', marketplace: '', skus: '', quantidade: '', custo_envio: '', custo_obs: '', data_criacao: '', data_coleta: '', status: 'em_aberto', observacoes: '' };
     const [formData, setFormData] = useState({ ...emptyForm });
 
@@ -5507,6 +5509,26 @@ const App = () => {
       if (data) setEnvios(prev => prev.map(e => e.id === envio.id ? data[0] : e));
     };
 
+    // Loja extraction from marketplace name
+    const getLojaFromMarketplace = (mp) => {
+      if (!mp) return 'Outro';
+      const lower = mp.toLowerCase();
+      if (lower.includes('sniff')) return 'Sniff';
+      if (lower.includes('casa')) return 'Casa Ipiranga';
+      if (lower.includes('romo')) return 'RomoBR';
+      if (lower.includes('inovate')) return 'Inovate';
+      return 'Outro';
+    };
+
+    const getMarketplaceBase = (mp) => {
+      if (!mp) return 'Outro';
+      if (mp.startsWith('Mercado')) return 'Mercado Livre';
+      if (mp.startsWith('Amazon')) return 'Amazon';
+      if (mp.startsWith('Shopee')) return 'Shopee';
+      if (mp.startsWith('Shein')) return 'Shein';
+      return 'Outro';
+    };
+
     // Build available months from data
     const availableMonths = useMemo(() => {
       const months = new Set();
@@ -5516,24 +5538,26 @@ const App = () => {
       return Array.from(months).sort().reverse();
     }, [envios]);
 
-    // Filter by month first, then by status
-    const monthFiltered = envios.filter(e => {
-      if (filterMonth === 'todos') return true;
-      return e.data_criacao && e.data_criacao.startsWith(filterMonth);
+    // Chain filters: month -> marketplace -> loja -> status
+    const baseFiltered = envios.filter(e => {
+      if (filterMonth !== 'todos' && !(e.data_criacao && e.data_criacao.startsWith(filterMonth))) return false;
+      if (filterMarketplace !== 'todos' && getMarketplaceBase(e.marketplace) !== filterMarketplace) return false;
+      if (filterLoja !== 'todos' && getLojaFromMarketplace(e.marketplace) !== filterLoja) return false;
+      return true;
     });
 
-    const filtered = monthFiltered.filter(e => {
+    const filtered = baseFiltered.filter(e => {
       if (activeFilter === 'todos') return true;
       return e.status === activeFilter;
     });
 
     const stats = {
-      total: monthFiltered.length,
-      aberto: monthFiltered.filter(e => e.status === 'em_aberto').length,
-      coletado: monthFiltered.filter(e => e.status === 'coletado').length,
-      problema: monthFiltered.filter(e => e.status === 'problema').length,
-      custoTotal: monthFiltered.reduce((s, e) => s + (Number(e.custo_envio) || 0), 0),
-      unidadesTotal: monthFiltered.reduce((s, e) => s + (Number(e.quantidade) || 0), 0),
+      total: baseFiltered.length,
+      aberto: baseFiltered.filter(e => e.status === 'em_aberto').length,
+      coletado: baseFiltered.filter(e => e.status === 'coletado').length,
+      problema: baseFiltered.filter(e => e.status === 'problema').length,
+      custoTotal: baseFiltered.reduce((s, e) => s + (Number(e.custo_envio) || 0), 0),
+      unidadesTotal: baseFiltered.reduce((s, e) => s + (Number(e.quantidade) || 0), 0),
     };
 
     const statusColors = {
@@ -5590,17 +5614,33 @@ const App = () => {
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-2 ml-auto">
-            <Calendar size={16} className="text-gray-400" />
-            <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
+          <div className="flex items-center gap-3 ml-auto flex-wrap">
+            <select value={filterMarketplace} onChange={e => setFilterMarketplace(e.target.value)}
               className="px-3 py-2 rounded-xl text-sm font-medium bg-white border border-gray-200 text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-200 cursor-pointer">
-              <option value="todos">Todos os meses</option>
-              {availableMonths.map(m => {
-                const [y, mo] = m.split('-');
-                const label = new Date(Number(y), Number(mo) - 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-                return <option key={m} value={m}>{label.charAt(0).toUpperCase() + label.slice(1)}</option>;
-              })}
+              <option value="todos">Marketplace</option>
+              {['Mercado Livre', 'Amazon', 'Shopee', 'Shein'].map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
             </select>
+            <select value={filterLoja} onChange={e => setFilterLoja(e.target.value)}
+              className="px-3 py-2 rounded-xl text-sm font-medium bg-white border border-gray-200 text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-200 cursor-pointer">
+              <option value="todos">Loja</option>
+              {['Sniff', 'Casa Ipiranga', 'RomoBR', 'Inovate', 'Outro'].map(l => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+            </select>
+            <div className="flex items-center gap-1">
+              <Calendar size={16} className="text-gray-400" />
+              <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
+                className="px-3 py-2 rounded-xl text-sm font-medium bg-white border border-gray-200 text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-200 cursor-pointer">
+                <option value="todos">Todos os meses</option>
+                {availableMonths.map(m => {
+                  const [y, mo] = m.split('-');
+                  const label = new Date(Number(y), Number(mo) - 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+                  return <option key={m} value={m}>{label.charAt(0).toUpperCase() + label.slice(1)}</option>;
+                })}
+              </select>
+            </div>
           </div>
         </div>
 
