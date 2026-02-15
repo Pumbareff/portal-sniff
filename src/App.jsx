@@ -915,7 +915,7 @@ const App = () => {
 
   // Componente Sidebar
   const Sidebar = () => {
-    const baseNavItems = [
+    const allNavItems = [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard' },
       { id: 'academy', label: 'Sniff Academy', icon: GraduationCap, permission: 'academy' },
       { id: 'recebimento', label: 'Recebimento', icon: Package, permission: 'recebimento' },
@@ -929,90 +929,160 @@ const App = () => {
       { id: 'analisevendas', label: 'Analise de Vendas', icon: TrendingUp, permission: 'analise_vendas' },
     ];
 
-    // Add admin panel if user is admin
     if (profile?.role === 'admin') {
-      baseNavItems.push({ id: 'admin', label: 'Admin', icon: ShieldCheck, permission: 'admin' });
+      allNavItems.push({ id: 'admin', label: 'Admin', icon: ShieldCheck, permission: 'admin' });
     }
 
-    // Filter nav items based on permissions
-    const navItems = profile?.role === 'admin'
-      ? baseNavItems
-      : baseNavItems.filter(item => {
-          if (item.id === 'admin') return false;
-          return profile?.permissions?.[item.permission] === true;
-        });
+    const canSee = (item) => {
+      if (profile?.role === 'admin') return true;
+      if (item.id === 'admin') return false;
+      return profile?.permissions?.[item.permission] === true;
+    };
 
-    return (
-      <aside className={`fixed left-0 top-0 h-full bg-[#6B1B8E] text-white transition-all duration-300 z-50 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
-        <div className="p-6 flex items-center gap-3">
-          <div className="min-w-[40px] h-10 bg-[#F4B942] rounded-lg flex items-center justify-center font-bold text-[#6B1B8E]">S</div>
-          {isSidebarOpen && <span className="font-bold text-xl tracking-tight">SNIFF</span>}
-        </div>
+    // Grouped sections
+    const sections = [
+      { label: 'PRINCIPAL', ids: ['dashboard', 'academy'] },
+      { label: 'OPERACOES', ids: ['recebimento', 'vendedor', 'pedidos', 'fulfillment', 'times'] },
+      { label: 'INTELIGENCIA', ids: ['analytics', 'analisevendas', 'precificacao'] },
+      { label: 'MARKETING', ids: ['marketing'] },
+      { label: 'SISTEMA', ids: ['admin'] },
+    ];
 
-        <nav className="mt-6 px-3 space-y-1">
-          {navItems.map((item) => {
-            const marketingChildren = ['marketing', 'gestao_anuncios', 'oportunidades', 'aguamarinha'];
-            const isMarketingGroup = item.id === 'marketing';
-            const isMarketingExpanded = isMarketingGroup && marketingChildren.includes(activeTab);
-            const isActive = activeTab === item.id || (isMarketingGroup && ['gestao_anuncios', 'oportunidades', 'aguamarinha'].includes(activeTab));
+    const marketingChildren = ['marketing', 'gestao_anuncios', 'oportunidades', 'aguamarinha'];
 
-            return (
-              <div key={item.id}>
-                <button
-                  onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center gap-4 p-3 rounded-xl transition-all ${
-                    isActive
-                    ? 'bg-[#F4B942] text-[#6B1B8E] shadow-lg'
-                    : 'hover:bg-[#4A1063] text-purple-100'
+    const renderNavItem = (item) => {
+      const isMarketingGroup = item.id === 'marketing';
+      const isMarketingExpanded = isMarketingGroup && marketingChildren.includes(activeTab);
+      const isActive = activeTab === item.id || (isMarketingGroup && ['gestao_anuncios', 'oportunidades', 'aguamarinha'].includes(activeTab));
+
+      return (
+        <div key={item.id} className="relative">
+          {/* Gold active indicator bar */}
+          {isActive && (
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-8 bg-[#F4B942] rounded-r-full shadow-[0_0_8px_rgba(244,185,66,0.6)]" />
+          )}
+          <button
+            onClick={() => setActiveTab(item.id)}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group ${
+              isActive
+              ? 'bg-white/15 text-white shadow-lg shadow-purple-900/30 backdrop-blur-sm'
+              : 'text-purple-200 hover:text-white hover:bg-white/10 hover:scale-[1.02] hover:shadow-lg hover:shadow-purple-500/10'
+            }`}
+          >
+            <div className={`min-w-[36px] h-9 rounded-lg flex items-center justify-center transition-all duration-200 ${
+              isActive
+              ? 'bg-[#F4B942] text-[#1a0a2e] shadow-md shadow-yellow-500/30'
+              : 'bg-white/10 text-purple-200 group-hover:bg-white/20 group-hover:text-white'
+            }`}>
+              <item.icon size={18} />
+            </div>
+            {isSidebarOpen && <span className={`text-sm flex-1 text-left ${isActive ? 'font-semibold' : 'font-medium'}`}>{item.label}</span>}
+            {isMarketingGroup && isSidebarOpen && (
+              <ChevronDown size={14} className={`transition-transform duration-200 ${isMarketingExpanded ? 'rotate-0' : '-rotate-90'}`} />
+            )}
+          </button>
+          {isMarketingGroup && isMarketingExpanded && isSidebarOpen && (
+            <div className="ml-6 mt-1 space-y-0.5 border-l-2 border-purple-400/20 pl-3">
+              {[
+                { id: 'marketing', label: 'Produtos Comprados' },
+                { id: 'gestao_anuncios', label: 'Produtos Parados' },
+                { id: 'oportunidades', label: 'Oportunidades' },
+                { id: 'aguamarinha', label: 'Agua Marinha' },
+              ].map(sub => (
+                <button key={sub.id}
+                  onClick={() => setActiveTab(sub.id)}
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-xs transition-all duration-200 ${
+                    activeTab === sub.id
+                    ? 'bg-[#F4B942]/20 text-[#F4B942] font-semibold'
+                    : 'text-purple-300 hover:text-white hover:bg-white/5'
                   }`}
                 >
-                  <item.icon size={22} />
-                  {isSidebarOpen && <span className="font-medium flex-1 text-left">{item.label}</span>}
-                  {isMarketingGroup && isSidebarOpen && (
-                    <ChevronDown size={16} className={`transition-transform ${isMarketingExpanded ? 'rotate-0' : '-rotate-90'}`} />
-                  )}
+                  {sub.label}
                 </button>
-                {isMarketingGroup && isMarketingExpanded && isSidebarOpen && (
-                  <div className="ml-9 mt-1 space-y-0.5">
-                    <button
-                      onClick={() => setActiveTab('marketing')}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${activeTab === 'marketing' ? 'bg-white/20 text-white font-medium' : 'text-purple-200 hover:text-white hover:bg-white/10'}`}
-                    >
-                      Gestao Produtos Comprados
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('gestao_anuncios')}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${activeTab === 'gestao_anuncios' ? 'bg-white/20 text-white font-medium' : 'text-purple-200 hover:text-white hover:bg-white/10'}`}
-                    >
-                      Gestao de Produtos Parados
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('oportunidades')}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${activeTab === 'oportunidades' ? 'bg-white/20 text-white font-medium' : 'text-purple-200 hover:text-white hover:bg-white/10'}`}
-                    >
-                      Oportunidades
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('aguamarinha')}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${activeTab === 'aguamarinha' ? 'bg-white/20 text-white font-medium' : 'text-purple-200 hover:text-white hover:bg-white/10'}`}
-                    >
-                      Agua Marinha
-                    </button>
-                  </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const userInitials = (profile?.full_name || profile?.email || 'U')
+      .split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+
+    return (
+      <aside className={`fixed left-0 top-0 h-full text-white transition-all duration-300 z-50 flex flex-col ${isSidebarOpen ? 'w-64' : 'w-20'}`}
+        style={{ background: 'linear-gradient(180deg, #0d0520 0%, #1a0a2e 20%, #6B1B8E 60%, #4A1063 85%, #1a0a2e 100%)' }}>
+
+        {/* Logo Header */}
+        <div className={`pt-6 pb-4 ${isSidebarOpen ? 'px-5' : 'px-3'}`}>
+          {isSidebarOpen ? (
+            <div className="flex flex-col items-center">
+              <div className="w-12 h-12 bg-gradient-to-br from-[#F4B942] to-[#e09a20] rounded-2xl flex items-center justify-center font-black text-[#1a0a2e] text-lg shadow-lg shadow-yellow-500/30 mb-3">
+                GS
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] font-bold tracking-[0.3em] text-purple-300 uppercase">Grupo</p>
+                <p className="text-xl font-black tracking-wider bg-gradient-to-r from-[#F4B942] via-[#f5c96a] to-[#F4B942] bg-clip-text text-transparent">SNIFF</p>
+              </div>
+              <div className="w-full mt-4 h-px bg-gradient-to-r from-transparent via-[#F4B942]/40 to-transparent" />
+            </div>
+          ) : (
+            <div className="flex justify-center">
+              <div className="w-11 h-11 bg-gradient-to-br from-[#F4B942] to-[#e09a20] rounded-2xl flex items-center justify-center font-black text-[#1a0a2e] text-sm shadow-lg shadow-yellow-500/30">
+                GS
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Nav Sections - Scrollable */}
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-2 space-y-4 scrollbar-thin scrollbar-thumb-purple-400/20 scrollbar-track-transparent">
+          {sections.map(section => {
+            const items = section.ids.map(id => allNavItems.find(n => n.id === id)).filter(Boolean).filter(canSee);
+            if (items.length === 0) return null;
+            return (
+              <div key={section.label}>
+                {isSidebarOpen && (
+                  <p className="text-[10px] font-bold tracking-[0.2em] text-purple-400/60 uppercase px-3 mb-2">{section.label}</p>
                 )}
+                {!isSidebarOpen && <div className="w-8 mx-auto h-px bg-purple-400/20 mb-2" />}
+                <div className="space-y-0.5">
+                  {items.map(renderNavItem)}
+                </div>
               </div>
             );
           })}
         </nav>
 
-        <div className="absolute bottom-6 w-full px-3">
-          <button
-            onClick={async () => { await supabase.auth.signOut(); setUser(null); }}
-            className="w-full flex items-center gap-4 p-3 text-purple-300 hover:text-white hover:bg-red-500/10 rounded-xl transition-all"
-          >
-            <LogOut size={22} />
-            {isSidebarOpen && <span className="font-medium">Sair</span>}
-          </button>
+        {/* User Card Footer */}
+        <div className="px-3 pb-4 pt-2">
+          <div className="h-px bg-gradient-to-r from-transparent via-purple-400/20 to-transparent mb-3" />
+          {isSidebarOpen ? (
+            <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white/5 backdrop-blur-sm border border-white/5">
+              <div className="min-w-[36px] h-9 rounded-full bg-gradient-to-br from-[#F4B942] to-[#e09a20] flex items-center justify-center text-[#1a0a2e] font-bold text-xs shadow-md shadow-yellow-500/20">
+                {userInitials}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-white truncate">{profile?.full_name || 'Usuario'}</p>
+                <p className="text-[10px] text-purple-300 truncate">{profile?.role === 'admin' ? 'Administrador' : 'Colaborador'}</p>
+              </div>
+              <button
+                onClick={async () => { await supabase.auth.signOut(); setUser(null); }}
+                className="p-1.5 text-purple-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                title="Sair"
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={async () => { await supabase.auth.signOut(); setUser(null); }}
+              className="w-full flex justify-center p-2.5 text-purple-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
+              title="Sair"
+            >
+              <LogOut size={18} />
+            </button>
+          )}
         </div>
       </aside>
     );
