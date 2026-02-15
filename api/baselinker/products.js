@@ -46,7 +46,7 @@ export default async function handler(req, res) {
       price1: p.prices?.['38915'] || 0, // Preco Padrao (unico price group)
       price2: p.prices?.['38915'] || 0, // Mesmo (inventario so tem 1 price group)
       price3: 0, // Nao existe no inventario
-      stock: p.stock ? Object.values(p.stock).reduce((s, v) => s + (Number(v) || 0), 0) : 0,
+      stock: p.stock ? Object.entries(p.stock).filter(([k]) => k !== 'reservations').reduce((s, [, v]) => s + (Number(v) || 0), 0) : 0,
       category: p.category_id || '',
       weight: p.weight || 0,
       images: p.images ? Object.values(p.images) : []
