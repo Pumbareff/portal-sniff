@@ -3712,12 +3712,12 @@ const App = () => {
 
     // Marketplace configs (same as old calculator)
     const defaultConfigs = {
-      mercadolivre: { nome: 'Mercado Livre', cor: '#FFE600', imposto: 11, comissao: 11.5, freteBaixo: 6.50, freteAlto: 20.00, limiarFrete: 79 },
-      shopee: { nome: 'Shopee', cor: '#EE4D2D', imposto: 11, comissao: 14, freteBaixo: 5.00, freteAlto: 15.00, limiarFrete: 49 },
-      amazon: { nome: 'Amazon', cor: '#FF9900', imposto: 11, comissao: 15, freteBaixo: 8.00, freteAlto: 22.00, limiarFrete: 99 },
-      tiktok: { nome: 'TikTok Shop', cor: '#69C9D0', imposto: 11, comissao: 8, freteBaixo: 5.00, freteAlto: 12.00, limiarFrete: 59 },
-      temu: { nome: 'Temu', cor: '#F54B24', imposto: 11, comissao: 12, freteBaixo: 0, freteAlto: 0, limiarFrete: 0 },
-      shein: { nome: 'Shein', cor: '#222222', imposto: 11, comissao: 20, freteBaixo: 0, freteAlto: 0, limiarFrete: 0 },
+      mercadolivre: { nome: 'Mercado Livre', cor: '#FFE600', imposto: 11, comissao: 11.5, afiliado: 0, freteBaixo: 6.50, freteAlto: 20.00, limiarFrete: 79 },
+      shopee: { nome: 'Shopee', cor: '#EE4D2D', imposto: 11, comissao: 14, afiliado: 0, freteBaixo: 5.00, freteAlto: 15.00, limiarFrete: 49 },
+      amazon: { nome: 'Amazon', cor: '#FF9900', imposto: 11, comissao: 15, afiliado: 0, freteBaixo: 8.00, freteAlto: 22.00, limiarFrete: 99 },
+      tiktok: { nome: 'TikTok Shop', cor: '#69C9D0', imposto: 11, comissao: 8, afiliado: 10, freteBaixo: 5.00, freteAlto: 12.00, limiarFrete: 59 },
+      temu: { nome: 'Temu', cor: '#F54B24', imposto: 11, comissao: 12, afiliado: 0, freteBaixo: 0, freteAlto: 0, limiarFrete: 0 },
+      shein: { nome: 'Shein', cor: '#222222', imposto: 11, comissao: 20, afiliado: 0, freteBaixo: 0, freteAlto: 0, limiarFrete: 0 },
     };
 
     const [mktConfigs, setMktConfigs] = useState(() => {
@@ -3780,7 +3780,7 @@ const App = () => {
     const calcPreco = (custo, margemAlvo) => {
       if (!custo || Number(custo) <= 0 || !config) return null;
       const c = Number(custo);
-      const divisor = 1 - (config.imposto / 100) - (config.comissao / 100) - (margemAlvo / 100);
+      const divisor = 1 - (config.imposto / 100) - (config.comissao / 100) - ((config.afiliado || 0) / 100) - (margemAlvo / 100);
       if (divisor <= 0) return null;
 
       const pvBaixo = (c + config.freteBaixo) / divisor;
@@ -4069,7 +4069,7 @@ const App = () => {
           {/* Config panel */}
           {showConfig && (
             <div className="mt-3 p-4 rounded-xl border border-gray-200 bg-gray-50">
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Imposto %</label>
                   <input type="number" step="0.1" value={config.imposto} onChange={e => updateConfig('imposto', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
@@ -4077,6 +4077,11 @@ const App = () => {
                 <div>
                   <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Comissao %</label>
                   <input type="number" step="0.1" value={config.comissao} onChange={e => updateConfig('comissao', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Afiliado %</label>
+                  <input type="number" step="0.1" value={config.afiliado || 0} onChange={e => updateConfig('afiliado', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
+                  <p className="text-[9px] text-gray-400 mt-0.5">0 = sem afiliado</p>
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Frete Baixo R$</label>
@@ -4346,7 +4351,7 @@ const App = () => {
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-100 border border-red-200"></span> Ataque 0-10% (agressivo)</span>
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-100 border border-amber-200"></span> Estruturacao 10-15% (competitivo)</span>
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-green-100 border border-green-200"></span> Estabilidade 15-30% (saudavel)</span>
-            <span className="ml-auto text-gray-400">Imposto: {config.imposto}% | Comissao: {config.comissao}% | Frete: R${config.freteBaixo}-{config.freteAlto}</span>
+            <span className="ml-auto text-gray-400">Imposto: {config.imposto}% | Comissao: {config.comissao}%{config.afiliado ? ' | Afiliado: ' + config.afiliado + '%' : ''} | Frete: R${config.freteBaixo}-{config.freteAlto}</span>
           </div>
         </div>
       </div>
