@@ -5516,7 +5516,7 @@ const App = () => {
       if (lower.includes('sniff')) return 'Sniff';
       if (lower.includes('casa')) return 'Casa Ipiranga';
       if (lower.includes('romo')) return 'RomoBR';
-      if (lower.includes('inovate')) return 'Inovate';
+      if (lower.includes('inovate') || lower === 'amazon') return 'Inovate';
       return 'Outro';
     };
 
