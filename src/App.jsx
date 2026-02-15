@@ -3691,264 +3691,461 @@ const App = () => {
     </div>
   );
 
-  // 7. Precificacao Calculator
+  // 7. Precificacao - Planilha Dinamica de Precos
   const PrecificacaoView = () => {
-    const [custo, setCusto] = useState('');
-    const [activeMarketplace, setActiveMarketplace] = useState('mercadolivre');
+    const [products, setProducts] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [loadProgress, setLoadProgress] = useState({ page: 0, count: 0 });
+    const [searchTerm, setSearchTerm] = useState('');
+    const [filterType, setFilterType] = useState('all');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [editingCell, setEditingCell] = useState(null);
+    const [editValue, setEditValue] = useState('');
+    const [sortField, setSortField] = useState('sku');
+    const [sortDir, setSortDir] = useState('asc');
+    const ITEMS_PER_PAGE = 50;
 
-    // Default marketplace configurations
-    const defaultConfigs = {
-      mercadolivre: { nome: 'Mercado Livre', cor: '#FFE600', imposto: 11, comissao: 11.5, freteBaixo: 6.50, freteAlto: 20.00, limiarFrete: 79 },
-      shopee: { nome: 'Shopee', cor: '#EE4D2D', imposto: 11, comissao: 14, freteBaixo: 5.00, freteAlto: 15.00, limiarFrete: 49 },
-      amazon: { nome: 'Amazon', cor: '#FF9900', imposto: 11, comissao: 15, freteBaixo: 8.00, freteAlto: 22.00, limiarFrete: 99 },
-      tiktok: { nome: 'TikTok Shop', cor: '#000000', imposto: 11, comissao: 8, freteBaixo: 5.00, freteAlto: 12.00, limiarFrete: 59 },
-      temu: { nome: 'Temu', cor: '#F54B24', imposto: 11, comissao: 12, freteBaixo: 0, freteAlto: 0, limiarFrete: 0 },
-    };
-
-    // Load from localStorage or use defaults
-    const [marketplaceConfigs, setMarketplaceConfigs] = useState(() => {
-      const saved = localStorage.getItem('portal-sniff-marketplace-configs');
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch {
-          return defaultConfigs;
-        }
-      }
-      return defaultConfigs;
-    });
-
-    // Save to localStorage whenever configs change
-    useEffect(() => {
-      localStorage.setItem('portal-sniff-marketplace-configs', JSON.stringify(marketplaceConfigs));
-    }, [marketplaceConfigs]);
-
-    const config = marketplaceConfigs[activeMarketplace];
-
-    const updateConfig = (field, value) => {
-      setMarketplaceConfigs(prev => ({
-        ...prev,
-        [activeMarketplace]: { ...prev[activeMarketplace], [field]: Number(value) }
-      }));
-    };
-
-    const calcPreco = (mcAlvo) => {
-      if (!custo || Number(custo) <= 0) return null;
-      const c = Number(custo);
-      const divisor = 1 - (config.imposto / 100) - (config.comissao / 100) - (mcAlvo / 100);
-      if (divisor <= 0) return null;
-
-      let pvBaixo = (c + config.freteBaixo) / divisor;
-      let pvAlto = (c + config.freteAlto) / divisor;
-
-      let pv, freteUsado;
-      if (config.limiarFrete === 0 || pvBaixo >= config.limiarFrete) {
-        pv = pvAlto;
-        freteUsado = config.freteAlto;
-      } else {
-        pv = pvBaixo;
-        freteUsado = config.freteBaixo;
-      }
-
-      const impostoVal = pv * (config.imposto / 100);
-      const comissaoVal = pv * (config.comissao / 100);
-      const mc = pv - impostoVal - comissaoVal - freteUsado - c;
-      const mcPct = (mc / pv) * 100;
-
-      return { pv, frete: freteUsado, impostoVal, comissaoVal, mc, mcPct };
-    };
-
-    const faixas = [
-      { nome: 'Entrada', mcMin: 5, mcMax: 10, mcMid: 7.5, cor: 'blue', desc: 'Ganhar Buy Box, lancar produto' },
-      { nome: 'Briga', mcMin: 10, mcMax: 15, mcMid: 12.5, cor: 'yellow', desc: 'Competir no dia a dia' },
-      { nome: 'Estavel', mcMin: 20, mcMax: 30, mcMid: 25, cor: 'green', desc: 'Preco saudavel, boa margem' },
+    const mktList = [
+      { key: 'ml', name: 'Mercado Livre', color: '#FFE600', short: 'ML' },
+      { key: 'shopee', name: 'Shopee', color: '#EE4D2D', short: 'SHP' },
+      { key: 'amazon', name: 'Amazon', color: '#FF9900', short: 'AMZ' },
+      { key: 'tiktok', name: 'TikTok', color: '#69C9D0', short: 'TIK' },
+      { key: 'temu', name: 'Temu', color: '#F54B24', short: 'TMU' },
+      { key: 'shein', name: 'Shein', color: '#222222', short: 'SHN' },
     ];
 
-    const resultados = faixas.map(f => {
-      const min = calcPreco(f.mcMin);
-      const mid = calcPreco(f.mcMid);
-      const max = calcPreco(f.mcMax);
-      return { ...f, min, mid, max };
+    // Marketplace prices persisted in localStorage
+    const [mktPrices, setMktPrices] = useState(() => {
+      try {
+        const saved = localStorage.getItem('portal-sniff-mkt-prices');
+        return saved ? JSON.parse(saved) : {};
+      } catch { return {}; }
     });
 
-    const fmt = (v) => v != null ? `R$ ${v.toFixed(2).replace('.', ',')}` : '-';
-    const fmtPct = (v) => v != null ? `${v.toFixed(1)}%` : '-';
+    useEffect(() => {
+      localStorage.setItem('portal-sniff-mkt-prices', JSON.stringify(mktPrices));
+    }, [mktPrices]);
 
-    const corMap = {
-      blue: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', badge: 'bg-blue-100 text-blue-800', gradient: 'from-blue-500 to-blue-600' },
-      yellow: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', badge: 'bg-amber-100 text-amber-800', gradient: 'from-amber-500 to-amber-600' },
-      green: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', badge: 'bg-green-100 text-green-800', gradient: 'from-green-500 to-green-600' },
+    // Parse SKU type: kit, combo, simple, simple_with_kits (hidden)
+    const parseProductType = (sku, allSkus) => {
+      if (!sku) return { type: 'simple', label: 'Simples', baseSku: sku, mult: null };
+      const upper = sku.toUpperCase();
+
+      // XXXKITn pattern (e.g. F0585KIT4, 455KIT6)
+      const kitMatch = upper.match(/^(.+?)KIT(\d+)$/);
+      if (kitMatch) {
+        return { type: 'kit', label: 'Kit x' + kitMatch[2], baseSku: kitMatch[1], mult: parseInt(kitMatch[2]) };
+      }
+
+      // Starts with KIT but not XXXKITn (e.g. KITDIAMOND1) -> combo
+      if (upper.startsWith('KIT')) {
+        return { type: 'combo', label: 'Combo', baseSku: null, mult: null };
+      }
+
+      // Simple - check if it has KIT variants in the list
+      const hasKits = allSkus.some(o => {
+        const m = o.toUpperCase().match(/^(.+?)KIT(\d+)$/);
+        return m && m[1] === upper;
+      });
+
+      if (hasKits) {
+        return { type: 'simple_with_kits', label: 'Base', baseSku: sku, mult: null };
+      }
+
+      return { type: 'simple', label: 'Simples', baseSku: sku, mult: null };
     };
 
+    // Fetch ALL products from BaseLinker (paginated)
+    const fetchAllProducts = async () => {
+      setLoading(true);
+      setProducts([]);
+      let all = [];
+      let page = 1;
+      let hasMore = true;
+
+      while (hasMore) {
+        setLoadProgress({ page, count: all.length });
+        try {
+          const res = await fetch('/api/baselinker/products?page=' + page);
+          const data = await res.json();
+          if (data.success && data.products && data.products.length > 0) {
+            all = all.concat(data.products);
+            page++;
+          } else {
+            hasMore = false;
+          }
+        } catch (err) {
+          console.error('Fetch error page', page, err);
+          hasMore = false;
+        }
+      }
+
+      const allSkus = all.map(p => p.sku).filter(Boolean);
+      const processed = all
+        .map(p => ({ ...p, productType: parseProductType(p.sku, allSkus) }))
+        .filter(p => p.productType.type !== 'simple_with_kits');
+
+      setProducts(processed);
+      setLoading(false);
+    };
+
+    useEffect(() => { fetchAllProducts(); }, []);
+
+    // Filtered + sorted
+    const filteredProducts = useMemo(() => {
+      let result = [...products];
+
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        result = result.filter(p =>
+          (p.sku && p.sku.toLowerCase().includes(term)) ||
+          (p.name && p.name.toLowerCase().includes(term))
+        );
+      }
+
+      if (filterType !== 'all') {
+        result = result.filter(p => p.productType.type === filterType);
+      }
+
+      result.sort((a, b) => {
+        let va = a[sortField] || '';
+        let vb = b[sortField] || '';
+        if (sortField === 'price1' || sortField === 'stock') {
+          va = Number(va) || 0;
+          vb = Number(vb) || 0;
+        } else {
+          va = String(va).toLowerCase();
+          vb = String(vb).toLowerCase();
+        }
+        if (va < vb) return sortDir === 'asc' ? -1 : 1;
+        if (va > vb) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+      });
+
+      return result;
+    }, [products, searchTerm, filterType, sortField, sortDir]);
+
+    const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
+    const paginatedProducts = filteredProducts.slice(
+      (currentPage - 1) * ITEMS_PER_PAGE,
+      currentPage * ITEMS_PER_PAGE
+    );
+
+    useEffect(() => { setCurrentPage(1); }, [searchTerm, filterType]);
+
+    // Inline editing
+    const startEdit = (productId, mktKey, currentVal) => {
+      setEditingCell({ productId, mktKey });
+      setEditValue(currentVal || '');
+    };
+
+    const saveEdit = () => {
+      if (!editingCell) return;
+      const { productId, mktKey } = editingCell;
+      const val = parseFloat(editValue);
+      setMktPrices(prev => ({
+        ...prev,
+        [productId]: { ...(prev[productId] || {}), [mktKey]: isNaN(val) ? null : val }
+      }));
+      setEditingCell(null);
+      setEditValue('');
+    };
+
+    const cancelEdit = () => { setEditingCell(null); setEditValue(''); };
+
+    const toggleSort = (field) => {
+      if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+      else { setSortField(field); setSortDir('asc'); }
+    };
+
+    const fmt = (v) => v != null && !isNaN(v) ? 'R$ ' + Number(v).toFixed(2).replace('.', ',') : '-';
+
+    // Export CSV
+    const exportCSV = () => {
+      const headers = ['SKU', 'Produto', 'Tipo', 'Custo', 'Estoque', ...mktList.map(m => m.name)];
+      const rows = filteredProducts.map(p => [
+        p.sku,
+        '"' + (p.name || '').replace(/"/g, '""') + '"',
+        p.productType.label,
+        p.price1 || 0,
+        p.stock || 0,
+        ...mktList.map(m => (mktPrices[p.id] && mktPrices[p.id][m.key]) || '')
+      ]);
+      const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'precificacao_' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    // Stats
+    const stats = useMemo(() => {
+      const total = products.length;
+      const kits = products.filter(p => p.productType.type === 'kit').length;
+      const combos = products.filter(p => p.productType.type === 'combo').length;
+      const simples = products.filter(p => p.productType.type === 'simple').length;
+      const withPrices = products.filter(p => {
+        const pp = mktPrices[p.id];
+        return pp && Object.values(pp).some(v => v != null && v > 0);
+      }).length;
+      return { total, kits, combos, simples, withPrices };
+    }, [products, mktPrices]);
+
+    const typeBadge = (type) => {
+      switch (type) {
+        case 'kit': return 'bg-purple-100 text-purple-700 border-purple-200';
+        case 'combo': return 'bg-amber-100 text-amber-700 border-amber-200';
+        default: return 'bg-gray-100 text-gray-600 border-gray-200';
+      }
+    };
+
+    const sortIcon = (field) => sortField === field ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
+
     return (
-      <div className="space-y-6">
-        {/* Header with Marketplace Tabs */}
-        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-          <h2 className="text-xl font-black text-[#6B1B8E] mb-1">Calculadora de Precificacao</h2>
-          <p className="text-sm text-gray-500 mb-4">Simples Nacional - Selecione o marketplace</p>
-
-          {/* Marketplace Tabs */}
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(marketplaceConfigs).map(([key, mp]) => (
-              <button
-                key={key}
-                onClick={() => setActiveMarketplace(key)}
-                className={`px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${
-                  activeMarketplace === key
-                    ? 'text-white shadow-lg scale-105'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-                style={activeMarketplace === key ? { backgroundColor: mp.cor } : {}}
-              >
-                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: mp.cor }}></span>
-                {mp.nome}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Inputs */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Custo do Produto - destaque */}
-          <div className="p-6 rounded-2xl shadow-sm text-white" style={{ background: `linear-gradient(135deg, ${config.cor}dd, ${config.cor}99)` }}>
-            <label className="block text-xs uppercase font-bold tracking-wider opacity-80 mb-2">Custo do Produto (R$)</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={custo}
-              onChange={e => setCusto(e.target.value)}
-              placeholder="Ex: 20.00"
-              className="w-full px-4 py-3 rounded-xl text-2xl font-black text-gray-800 bg-white outline-none focus:ring-2 focus:ring-white/50"
-            />
-            <p className="text-xs mt-2 opacity-80">Calculando para: <strong>{config.nome}</strong></p>
-          </div>
-
-          {/* Parametros editaveis do Marketplace */}
-          <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-gray-800">Parametros {config.nome}</h3>
-              <span className="w-4 h-4 rounded-full" style={{ backgroundColor: config.cor }}></span>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+      <div className="space-y-4">
+        {/* Header */}
+        <div className="rounded-2xl overflow-hidden" style={{ background: 'linear-gradient(135deg, #0d0520 0%, #1a0a2e 50%, #6B1B8E 100%)' }}>
+          <div className="p-6">
+            <div className="flex items-center justify-between flex-wrap gap-4">
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Imposto %</label>
-                <input type="number" step="0.1" value={config.imposto} onChange={e => updateConfig('imposto', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
+                <h2 className="text-2xl font-black text-white flex items-center gap-3">
+                  <DollarSign size={28} className="text-[#F4B942]" />
+                  Planilha de Precificacao
+                </h2>
+                <p className="text-purple-200 text-sm mt-1">Todos os produtos BaseLinker com precos por marketplace</p>
               </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Comissao %</label>
-                <input type="number" step="0.1" value={config.comissao} onChange={e => updateConfig('comissao', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Frete Baixo (R$)</label>
-                <input type="number" step="0.01" value={config.freteBaixo} onChange={e => updateConfig('freteBaixo', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Frete Alto (R$)</label>
-                <input type="number" step="0.01" value={config.freteAlto} onChange={e => updateConfig('freteAlto', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
+              <div className="flex items-center gap-3">
+                <button onClick={exportCSV} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-bold flex items-center gap-2 transition-all">
+                  <Download size={16} /> Exportar CSV
+                </button>
+                <button onClick={fetchAllProducts} disabled={loading} className="px-4 py-2 bg-[#F4B942] hover:bg-[#e5aa33] text-gray-900 rounded-xl text-sm font-black flex items-center gap-2 transition-all disabled:opacity-50">
+                  <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> {loading ? 'Carregando...' : 'Atualizar'}
+                </button>
               </div>
             </div>
-            <div className="mt-3">
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Limiar Frete Gratis (R$)</label>
-              <input type="number" step="1" value={config.limiarFrete} onChange={e => updateConfig('limiarFrete', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none" />
-              <p className="text-[10px] text-gray-400 mt-1">0 = sem frete gratis (usa sempre frete alto)</p>
-            </div>
-          </div>
-        </div>
 
-        {/* Resultado - 3 cards */}
-        {custo && Number(custo) > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {resultados.map(r => {
-              const cores = corMap[r.cor];
-              return (
-                <div key={r.nome} className={`${cores.bg} border ${cores.border} rounded-2xl overflow-hidden`}>
-                  {/* Header com gradiente */}
-                  <div className={`bg-gradient-to-r ${cores.gradient} px-6 py-4 text-white`}>
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-black text-lg">{r.nome}</h3>
-                      <span className="text-xs opacity-80">MC {r.mcMin}-{r.mcMax}%</span>
-                    </div>
-                    <p className="text-xs opacity-80 mt-1">{r.desc}</p>
-                  </div>
-
-                  {/* Preco principal (ponto medio) */}
-                  <div className="px-6 py-5">
-                    <p className="text-xs text-gray-500 uppercase font-bold mb-1">Preco Sugerido</p>
-                    <p className={`text-3xl font-black ${cores.text}`}>{r.mid ? fmt(r.mid.pv) : '-'}</p>
-                    {r.mid && (
-                      <span className={`inline-block mt-2 px-2 py-1 rounded-full text-xs font-bold ${cores.badge}`}>
-                        MC: {fmtPct(r.mid.mcPct)}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Faixa min-max */}
-                  <div className="px-6 pb-4">
-                    <div className="flex justify-between text-xs text-gray-500 mb-2">
-                      <span>Faixa de preco:</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
-                      <span>{r.min ? fmt(r.min.pv) : '-'}</span>
-                      <span className="text-gray-300">—</span>
-                      <span>{r.max ? fmt(r.max.pv) : '-'}</span>
-                    </div>
-                  </div>
-
-                  {/* Breakdown */}
-                  {r.mid && (
-                    <div className="px-6 pb-5 space-y-2">
-                      <div className="h-px bg-gray-200 mb-3"></div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">Custo</span>
-                        <span className="font-bold">{fmt(Number(custo))}</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">Imposto ({config.imposto}%)</span>
-                        <span className="font-bold text-red-500">- {fmt(r.mid.impostoVal)}</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">Comissao ({config.comissao}%)</span>
-                        <span className="font-bold text-red-500">- {fmt(r.mid.comissaoVal)}</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">Frete</span>
-                        <span className="font-bold text-red-500">- {fmt(r.mid.frete)}</span>
-                      </div>
-                      <div className="h-px bg-gray-200 my-1"></div>
-                      <div className="flex justify-between text-xs">
-                        <span className="font-bold text-gray-700">Margem (R$)</span>
-                        <span className={`font-black ${cores.text}`}>{fmt(r.mid.mc)}</span>
-                      </div>
-                    </div>
-                  )}
+            {/* Stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-5">
+              {[
+                { label: 'Total', value: stats.total, bg: 'bg-white/10' },
+                { label: 'Kits', value: stats.kits, bg: 'bg-purple-500/30' },
+                { label: 'Combos', value: stats.combos, bg: 'bg-amber-500/30' },
+                { label: 'Simples', value: stats.simples, bg: 'bg-blue-500/30' },
+                { label: 'Com Preco', value: stats.withPrices, bg: 'bg-green-500/30' },
+              ].map(s => (
+                <div key={s.label} className={s.bg + ' rounded-xl px-4 py-3 text-center'}>
+                  <p className="text-2xl font-black text-white">{loading ? '...' : s.value}</p>
+                  <p className="text-xs text-purple-200 font-bold uppercase">{s.label}</p>
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
-        ) : (
-          <div className="bg-white p-12 rounded-2xl border border-gray-100 shadow-sm text-center">
-            <DollarSign size={48} className="mx-auto text-gray-300 mb-4" />
-            <p className="text-gray-400 font-bold">Insira o custo do produto para ver os precos calculados</p>
+        </div>
+
+        {/* Toolbar */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="relative flex-1 min-w-[250px]">
+              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Buscar por SKU ou nome..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-200 outline-none"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              {[
+                { key: 'all', label: 'Todos' },
+                { key: 'kit', label: 'Kits' },
+                { key: 'combo', label: 'Combos' },
+                { key: 'simple', label: 'Simples' },
+              ].map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => setFilterType(f.key)}
+                  className={'px-3 py-2 rounded-xl text-xs font-bold transition-all ' + (
+                    filterType === f.key
+                      ? 'bg-[#6B1B8E] text-white shadow-md'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  )}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <span className="text-sm text-gray-500 font-bold">{filteredProducts.length} produtos</span>
+          </div>
+        </div>
+
+        {/* Loading */}
+        {loading && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
+            <RefreshCw size={32} className="mx-auto text-[#6B1B8E] animate-spin mb-3" />
+            <p className="font-bold text-gray-700">Carregando produtos do BaseLinker...</p>
+            <p className="text-sm text-gray-500 mt-1">Pagina {loadProgress.page} - {loadProgress.count} produtos carregados</p>
           </div>
         )}
 
-        {/* Info box */}
-        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-          <h4 className="font-bold text-gray-800 mb-3">Como funciona</h4>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
-            <div>
-              <p className="font-bold text-blue-600 mb-1">Entrada (5-10%)</p>
-              <p>Preco agressivo para ganhar Buy Box e lancar produtos novos. Margem minima.</p>
+        {/* Spreadsheet */}
+        {!loading && products.length > 0 && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200" style={{ background: 'linear-gradient(135deg, #0d0520, #1a0a2e)' }}>
+                    <th className="px-3 py-3 text-left text-xs font-bold text-purple-200 uppercase cursor-pointer hover:text-white whitespace-nowrap" onClick={() => toggleSort('sku')}>
+                      SKU{sortIcon('sku')}
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-bold text-purple-200 uppercase cursor-pointer hover:text-white whitespace-nowrap" onClick={() => toggleSort('name')}>
+                      Produto{sortIcon('name')}
+                    </th>
+                    <th className="px-3 py-3 text-center text-xs font-bold text-purple-200 uppercase whitespace-nowrap">Tipo</th>
+                    <th className="px-3 py-3 text-right text-xs font-bold text-purple-200 uppercase cursor-pointer hover:text-white whitespace-nowrap" onClick={() => toggleSort('price1')}>
+                      Custo{sortIcon('price1')}
+                    </th>
+                    <th className="px-3 py-3 text-right text-xs font-bold text-purple-200 uppercase cursor-pointer hover:text-white whitespace-nowrap" onClick={() => toggleSort('stock')}>
+                      Estoque{sortIcon('stock')}
+                    </th>
+                    {mktList.map(m => (
+                      <th key={m.key} className="px-3 py-3 text-center text-xs font-bold uppercase whitespace-nowrap" style={{ color: m.color }}>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: m.color }}></span>
+                          {m.short}
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedProducts.map((p, idx) => (
+                    <tr key={p.id} className={'border-b border-gray-50 hover:bg-purple-50/50 transition-colors ' + (idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30')}>
+                      <td className="px-3 py-2.5 font-mono text-xs font-bold text-[#6B1B8E] whitespace-nowrap">{p.sku}</td>
+                      <td className="px-3 py-2.5 text-gray-700 max-w-[250px] truncate" title={p.name}>{p.name}</td>
+                      <td className="px-3 py-2.5 text-center">
+                        <span className={'inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ' + typeBadge(p.productType.type)}>
+                          {p.productType.label}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono text-xs font-bold text-gray-600 whitespace-nowrap">{fmt(p.price1)}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-xs text-gray-500 whitespace-nowrap">{p.stock}</td>
+                      {mktList.map(m => {
+                        const cellPrice = mktPrices[p.id] && mktPrices[p.id][m.key];
+                        const isEditing = editingCell && editingCell.productId === p.id && editingCell.mktKey === m.key;
+                        const margin = cellPrice && p.price1 ? (((cellPrice - p.price1) / cellPrice) * 100).toFixed(1) : null;
+
+                        return (
+                          <td key={m.key} className="px-1.5 py-1.5 text-center">
+                            {isEditing ? (
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editValue}
+                                onChange={e => setEditValue(e.target.value)}
+                                onBlur={saveEdit}
+                                onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
+                                autoFocus
+                                className="w-full px-2 py-1 border-2 border-[#6B1B8E] rounded-lg text-xs text-center font-bold outline-none bg-purple-50"
+                                style={{ minWidth: '80px' }}
+                              />
+                            ) : (
+                              <div
+                                onClick={() => startEdit(p.id, m.key, cellPrice)}
+                                className="cursor-pointer px-2 py-1 rounded-lg hover:bg-gray-100 transition-all group"
+                                style={{ minWidth: '80px' }}
+                                title={margin ? 'Margem: ' + margin + '%' : 'Clique para editar'}
+                              >
+                                {cellPrice ? (
+                                  <div>
+                                    <span className="font-bold text-xs text-gray-800">{fmt(cellPrice)}</span>
+                                    {margin && (
+                                      <span className={'block text-[10px] font-bold ' + (Number(margin) >= 20 ? 'text-green-600' : Number(margin) >= 10 ? 'text-amber-600' : 'text-red-500')}>
+                                        {margin}%
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-300 text-xs group-hover:text-[#6B1B8E]">+ preco</span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div>
-              <p className="font-bold text-amber-600 mb-1">Briga (10-15%)</p>
-              <p>Preco competitivo para o dia a dia. Equilibrio entre volume e margem.</p>
-            </div>
-            <div>
-              <p className="font-bold text-green-600 mb-1">Estavel (20-30%)</p>
-              <p>Preco saudavel com boa margem de contribuicao. Ideal para produtos consolidados.</p>
-            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/50">
+                <span className="text-sm text-gray-500">
+                  Mostrando {((currentPage - 1) * ITEMS_PER_PAGE) + 1}-{Math.min(currentPage * ITEMS_PER_PAGE, filteredProducts.length)} de {filteredProducts.length}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1.5 rounded-lg text-sm font-bold bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-40 transition-all"
+                  >
+                    Anterior
+                  </button>
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 7) pageNum = i + 1;
+                    else if (currentPage <= 4) pageNum = i + 1;
+                    else if (currentPage >= totalPages - 3) pageNum = totalPages - 6 + i;
+                    else pageNum = currentPage - 3 + i;
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={'w-8 h-8 rounded-lg text-sm font-bold transition-all ' + (
+                          currentPage === pageNum
+                            ? 'bg-[#6B1B8E] text-white shadow-md'
+                            : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-600'
+                        )}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1.5 rounded-lg text-sm font-bold bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-40 transition-all"
+                  >
+                    Proximo
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!loading && products.length === 0 && (
+          <div className="bg-white p-12 rounded-2xl border border-gray-100 shadow-sm text-center">
+            <DollarSign size={48} className="mx-auto text-gray-300 mb-4" />
+            <p className="text-gray-400 font-bold">Nenhum produto carregado</p>
+            <p className="text-sm text-gray-400 mt-2">Clique em "Atualizar" para buscar produtos do BaseLinker</p>
+          </div>
+        )}
+
+        {/* Legend */}
+        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+          <div className="flex items-center gap-6 text-xs text-gray-500 flex-wrap">
+            <span className="font-bold text-gray-700">Legenda:</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500"></span> Margem &ge; 20%</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500"></span> Margem 10-20%</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500"></span> Margem &lt; 10%</span>
+            <span className="ml-auto text-gray-400">Clique em qualquer celula de preco para editar | Precos salvos localmente</span>
           </div>
         </div>
       </div>
