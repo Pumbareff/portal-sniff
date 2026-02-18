@@ -32,6 +32,7 @@ import {
   FileText,
   Clock,
   AlertCircle,
+  AlertTriangle,
   CheckCircle,
   XCircle,
   Send,
@@ -3564,10 +3565,10 @@ const App = () => {
     const showForm = pedidoShowForm;
     const setShowForm = setPedidoShowForm;
     const [activeFilter, setActiveFilter] = useState('todos');
-    const [respondingTo, setRespondingTo] = useState(null);
     const [viewingDetail, setViewingDetail] = useState(null);
     const [dbReady, setDbReady] = useState(true);
-    const [responseData, setResponseData] = useState({ preco_resposta: '', prazo_resposta: '' });
+    const [workflowModal, setWorkflowModal] = useState(null);
+    const [wfData, setWfData] = useState({});
 
     // Load pedidos from Supabase
     useEffect(() => {
@@ -3652,21 +3653,33 @@ const App = () => {
       setShowForm(false);
     };
 
-    const handleResponder = async (pedido) => {
-      const updated = { ...pedido, status: 'respondida', preco_resposta: Number(responseData.preco_resposta), prazo_resposta: responseData.prazo_resposta, responded_at: new Date().toISOString() };
+    const advanceStatus = async (pedido, newStatus, extraData = {}) => {
+      const now = new Date().toISOString();
+      const tsMap = { enviado_next: 'enviado_next_at', aprovado: 'aprovado_at', ok_faturar: 'ok_faturar_at', faturado: 'faturado_at', cancelado: 'cancelado_at' };
+      const updates = { status: newStatus, ...extraData };
+      if (tsMap[newStatus]) updates[tsMap[newStatus]] = now;
       try {
-        await supabase.from('pedidos_fornecedor').update({ status: 'respondida', preco_resposta: updated.preco_resposta, prazo_resposta: updated.prazo_resposta, responded_at: updated.responded_at }).eq('id', pedido.id);
-      } catch {}
-      setPedidos(prev => prev.map(p => p.id === pedido.id ? updated : p));
-      setRespondingTo(null);
-      setResponseData({ preco_resposta: '', prazo_resposta: '' });
+        await supabase.from('pedidos_fornecedor').update(updates).eq('id', pedido.id);
+      } catch (e) { console.warn('Status update error:', e); }
+      setPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, ...updates } : p));
+      setWorkflowModal(null);
+      setWfData({});
     };
 
-    const handleUpdateStatus = async (pedido, newStatus) => {
-      try {
-        await supabase.from('pedidos_fornecedor').update({ status: newStatus }).eq('id', pedido.id);
-      } catch {}
-      setPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, status: newStatus } : p));
+    const isOverdue = (p) => {
+      if (p.status === 'enviado_next' && p.enviado_next_at) {
+        return (Date.now() - new Date(p.enviado_next_at)) / 3600000 > 24;
+      }
+      if (p.status === 'ok_faturar' && p.ok_faturar_at) {
+        return (Date.now() - new Date(p.ok_faturar_at)) / 86400000 > 9;
+      }
+      return false;
+    };
+
+    const overdueLabel = (p) => {
+      if (p.status === 'enviado_next') return 'Next nao respondeu';
+      if (p.status === 'ok_faturar') return 'Next nao faturou';
+      return '';
     };
 
     const handleDeletePedido = async (pedido) => {
@@ -3746,33 +3759,36 @@ const App = () => {
 
     const filteredPedidos = pedidos.filter(p => {
       if (activeFilter === 'todos') return true;
+      if (activeFilter === 'atrasado') return isOverdue(p);
       return p.status === activeFilter;
     });
 
     const totalOrdens = pedidos.length;
-    const tempoMedioResposta = (() => {
-      const responded = pedidos.filter(p => p.responded_at && p.created_at);
-      if (responded.length === 0) return 0;
-      const totalDays = responded.reduce((sum, p) => {
-        return sum + (new Date(p.responded_at) - new Date(p.created_at)) / (1000 * 60 * 60 * 24);
-      }, 0);
-      return (totalDays / responded.length).toFixed(1);
-    })();
-    const taxaAprovacao = totalOrdens > 0 ? ((pedidos.filter(p => p.status === 'aprovada').length / totalOrdens) * 100).toFixed(0) : 0;
-    const volumePendente = pedidos.filter(p => p.status === 'pendente').reduce((sum, p) => sum + (p.valor_total || 0), 0);
+    const aguardandoNext = pedidos.filter(p => p.status === 'enviado_next').length;
+    const aguardandoFaturar = pedidos.filter(p => p.status === 'ok_faturar').length;
+    const volumeEmFluxo = pedidos.filter(p => !['faturado', 'cancelado'].includes(p.status)).reduce((sum, p) => sum + (p.valor_total || 0), 0);
 
     const statusConfig = {
-      pendente: { color: 'bg-yellow-100 text-yellow-800', icon: <Clock size={14} /> },
-      respondida: { color: 'bg-blue-100 text-blue-800', icon: <AlertCircle size={14} /> },
-      aprovada: { color: 'bg-green-100 text-green-800', icon: <CheckCircle size={14} /> },
-      rejeitada: { color: 'bg-red-100 text-red-800', icon: <XCircle size={14} /> },
+      pendente: { label: 'Pendente', color: 'bg-yellow-100 text-yellow-800', icon: <Clock size={14} />, order: 1 },
+      enviado_next: { label: 'Enviado Next', color: 'bg-blue-100 text-blue-800', icon: <Send size={14} />, order: 2 },
+      aprovado: { label: 'Aprovado', color: 'bg-green-100 text-green-800', icon: <CheckCircle size={14} />, order: 3 },
+      ok_faturar: { label: 'OK Faturar', color: 'bg-purple-100 text-purple-800', icon: <CheckCircle size={14} />, order: 4 },
+      faturado: { label: 'Faturado', color: 'bg-emerald-100 text-emerald-800', icon: <Package size={14} />, order: 5 },
+      preco_recusado: { label: 'Preco Recusado', color: 'bg-orange-100 text-orange-800', icon: <AlertTriangle size={14} />, order: 0 },
+      cancelado: { label: 'Cancelado', color: 'bg-gray-200 text-gray-500', icon: <XCircle size={14} />, order: 0 },
     };
 
     const filters = [
-      { key: 'todos', label: 'Minhas Solicitacoes' },
-      { key: 'pendente', label: 'Pendentes Resposta' },
-      { key: 'aprovada', label: 'Aprovadas' },
+      { key: 'todos', label: 'Todos' },
+      { key: 'pendente', label: 'Pendentes' },
+      { key: 'enviado_next', label: 'Enviado Next' },
+      { key: 'aprovado', label: 'Aprovados' },
+      { key: 'ok_faturar', label: 'OK Faturar' },
+      { key: 'faturado', label: 'Faturados' },
+      { key: 'atrasado', label: 'Atrasados' },
     ];
+
+    const overdueCount = pedidos.filter(p => isOverdue(p)).length;
 
     return (
       <div className="space-y-6">
@@ -3803,9 +3819,9 @@ const App = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {[
             { title: 'Total de Ordens', value: totalOrdens, icon: <ClipboardList size={24} />, color: COLORS.purple },
-            { title: 'Tempo Medio Resposta', value: `${tempoMedioResposta}d`, icon: <Clock size={24} />, color: '#3B82F6' },
-            { title: 'Taxa de Aprovacao', value: `${taxaAprovacao}%`, icon: <CheckCircle size={24} />, color: '#10B981' },
-            { title: 'Volume Pendente', value: `R$ ${volumePendente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, icon: <DollarSign size={24} />, color: COLORS.gold },
+            { title: 'Aguardando Next', value: aguardandoNext, icon: <Send size={24} />, color: '#3B82F6' },
+            { title: 'Atrasados', value: overdueCount, icon: <AlertTriangle size={24} />, color: overdueCount > 0 ? '#EF4444' : '#10B981' },
+            { title: 'Volume em Fluxo', value: `R$ ${volumeEmFluxo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, icon: <DollarSign size={24} />, color: COLORS.gold },
           ].map((kpi, i) => (
             <div key={i} className="bg-white rounded-2xl shadow-md p-5">
               <div className="flex items-center justify-between mb-2">
@@ -3818,12 +3834,13 @@ const App = () => {
         </div>
 
         {/* Filter Tabs */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {filters.map(f => (
             <button key={f.key} onClick={() => setActiveFilter(f.key)}
-              className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activeFilter === f.key ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              style={activeFilter === f.key ? { backgroundColor: COLORS.purple } : {}}>
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${activeFilter === f.key ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              style={activeFilter === f.key ? { backgroundColor: f.key === 'atrasado' ? '#EF4444' : COLORS.purple } : f.key === 'atrasado' && overdueCount > 0 ? { backgroundColor: '#FEE2E2', color: '#DC2626' } : {}}>
               {f.label}
+              {f.key === 'atrasado' && overdueCount > 0 && <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">{overdueCount}</span>}
             </button>
           ))}
         </div>
@@ -3855,25 +3872,49 @@ const App = () => {
                     <td className="px-4 py-3 text-gray-600">{p.items?.length || 1} ({p.quantidade || p.items?.reduce((s, i) => s + (Number(i.quantidade) || 0), 0) || 0} un)</td>
                     <td className="px-4 py-3 text-gray-800 font-medium">R$ {(p.valor_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusConfig[p.status]?.color || 'bg-gray-100 text-gray-600'}`}>
-                        {statusConfig[p.status]?.icon} {p.status?.charAt(0).toUpperCase() + p.status?.slice(1)}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusConfig[p.status]?.color || 'bg-gray-100 text-gray-600'}`}>
+                          {statusConfig[p.status]?.icon} {statusConfig[p.status]?.label || p.status}
+                        </span>
+                        {isOverdue(p) && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500 text-white animate-pulse">
+                            <AlertTriangle size={10} /> {overdueLabel(p)}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-sm">{p.created_at ? new Date(p.created_at).toLocaleDateString('pt-BR') : '-'}</td>
                     <td className="px-4 py-3">
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 flex-wrap">
                         {p.status === 'pendente' && (
-                          <button onClick={() => { setRespondingTo(p); setResponseData({ preco_resposta: '', prazo_resposta: '' }); }} className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50" title="Responder"><Send size={15} /></button>
+                          <button onClick={() => advanceStatus(p, 'enviado_next')} className="px-2 py-1 rounded-lg text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100" title="Marcar como enviado para Next"><Send size={13} className="inline mr-1" />Enviar Next</button>
                         )}
-                        {p.status === 'respondida' && (
+                        {p.status === 'enviado_next' && (
                           <>
-                            <button onClick={() => handleUpdateStatus(p, 'aprovada')} className="p-1.5 rounded-lg text-green-600 hover:bg-green-50" title="Aprovar"><CheckCircle size={15} /></button>
-                            <button onClick={() => handleUpdateStatus(p, 'rejeitada')} className="p-1.5 rounded-lg text-red-600 hover:bg-red-50" title="Rejeitar"><XCircle size={15} /></button>
+                            <button onClick={() => { setWorkflowModal({ type: 'approve', pedido: p }); setWfData({ pedido_next_ref: '' }); }} className="px-2 py-1 rounded-lg text-xs font-bold text-green-700 bg-green-50 hover:bg-green-100" title="Next aprovou precos"><CheckCircle size={13} className="inline mr-1" />Aprovado</button>
+                            <button onClick={() => { setWorkflowModal({ type: 'reject', pedido: p }); setWfData({ preco_next_sugerido: '', motivo_recusa: '' }); }} className="px-2 py-1 rounded-lg text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100" title="Next recusou precos"><XCircle size={13} className="inline mr-1" />Recusado</button>
                           </>
                         )}
-                        <button onClick={() => handleDownloadPDF(p)} className="p-1.5 rounded-lg text-purple-600 hover:bg-purple-50" title="Baixar PDF"><Download size={15} /></button>
-                        <button onClick={() => setViewingDetail(p)} className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100" title="Ver Detalhes"><Eye size={15} /></button>
-                        <button onClick={() => handleDeletePedido(p)} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50" title="Excluir"><Trash2 size={15} /></button>
+                        {p.status === 'aprovado' && (
+                          <button onClick={() => advanceStatus(p, 'ok_faturar')} className="px-2 py-1 rounded-lg text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100" title="Dar OK para Next faturar"><CheckCircle size={13} className="inline mr-1" />OK Faturar</button>
+                        )}
+                        {p.status === 'ok_faturar' && (
+                          <button onClick={() => { setWorkflowModal({ type: 'faturar', pedido: p }); setWfData({}); }} className="px-2 py-1 rounded-lg text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100" title="Marcar como faturado"><Package size={13} className="inline mr-1" />Faturado</button>
+                        )}
+                        {p.status === 'preco_recusado' && (
+                          <>
+                            <button onClick={() => advanceStatus(p, 'enviado_next')} className="px-2 py-1 rounded-lg text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100" title="Reenviar com ajustes"><Send size={13} className="inline mr-1" />Reenviar</button>
+                            <button onClick={() => { setWorkflowModal({ type: 'cancel', pedido: p }); setWfData({ motivo_cancelamento: '' }); }} className="px-2 py-1 rounded-lg text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200" title="Cancelar pedido"><XCircle size={13} className="inline mr-1" />Cancelar</button>
+                          </>
+                        )}
+                        {!['faturado', 'cancelado'].includes(p.status) && p.status !== 'preco_recusado' && (
+                          <button onClick={() => { setWorkflowModal({ type: 'cancel', pedido: p }); setWfData({ motivo_cancelamento: '' }); }} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50" title="Cancelar"><XCircle size={13} /></button>
+                        )}
+                        <button onClick={() => handleDownloadPDF(p)} className="p-1.5 rounded-lg text-purple-600 hover:bg-purple-50" title="Baixar PDF"><Download size={13} /></button>
+                        <button onClick={() => setViewingDetail(p)} className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100" title="Ver Detalhes"><Eye size={13} /></button>
+                        {p.status === 'cancelado' && (
+                          <button onClick={() => handleDeletePedido(p)} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50" title="Excluir"><Trash2 size={13} /></button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -3886,36 +3927,73 @@ const App = () => {
         {/* New Order Modal - extracted component to fix input focus bug */}
         <NovaOrdemModal isOpen={showForm} onClose={() => setShowForm(false)} onSubmit={handleCreatePedido} />
 
-        {/* Response Modal */}
-        {respondingTo && (
+        {/* Workflow Modals */}
+        {workflowModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
               <div className="flex items-center justify-between p-6 border-b">
-                <h3 className="text-lg font-bold text-gray-800">Responder {respondingTo.numero_oc}</h3>
-                <button onClick={() => setRespondingTo(null)} className="p-1 rounded-lg hover:bg-gray-100"><X size={20} /></button>
+                <h3 className="text-lg font-bold text-gray-800">
+                  {workflowModal.type === 'approve' && 'Next Aprovou Precos'}
+                  {workflowModal.type === 'reject' && 'Next Recusou Precos'}
+                  {workflowModal.type === 'cancel' && 'Cancelar Pedido'}
+                  {workflowModal.type === 'faturar' && 'Marcar como Faturado'}
+                </h3>
+                <button onClick={() => setWorkflowModal(null)} className="p-1 rounded-lg hover:bg-gray-100"><X size={20} /></button>
               </div>
               <div className="p-6 space-y-4">
-                <div className="bg-gray-50 rounded-xl p-3 text-sm space-y-1">
-                  <p><span className="text-gray-500">Fornecedor:</span> {respondingTo.fornecedor}</p>
-                  {respondingTo.items?.length > 0 ? respondingTo.items.map((item, idx) => (
-                    <p key={idx}><span className="text-gray-500">{item.sku || `Item ${idx+1}`}:</span> {item.produto} x {item.quantidade}</p>
-                  )) : (
-                    <p><span className="text-gray-500">Produto:</span> {respondingTo.produto} x {respondingTo.quantidade}</p>
-                  )}
-                  <p className="font-medium pt-1" style={{ color: COLORS.purple }}>Total: R$ {(respondingTo.valor_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                <div className="bg-gray-50 rounded-xl p-3 text-sm">
+                  <p className="font-medium">{workflowModal.pedido.numero_oc} - {workflowModal.pedido.fornecedor}</p>
+                  <p className="text-gray-500">R$ {(workflowModal.pedido.valor_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Preco Ofertado (R$)</label>
-                  <input type="number" step="0.01" value={responseData.preco_resposta} onChange={e => setResponseData({ ...responseData, preco_resposta: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2" placeholder="0.00" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Prazo de Entrega</label>
-                  <input type="date" value={responseData.prazo_resposta} onChange={e => setResponseData({ ...responseData, prazo_resposta: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2" />
-                </div>
+
+                {workflowModal.type === 'approve' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Numero do Pedido Next (referencia)</label>
+                    <input type="text" value={wfData.pedido_next_ref || ''} onChange={e => setWfData({ ...wfData, pedido_next_ref: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-green-200" placeholder="Ex: PED-12345" />
+                  </div>
+                )}
+
+                {workflowModal.type === 'reject' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Preco Sugerido pela Next (R$)</label>
+                      <input type="number" step="0.01" value={wfData.preco_next_sugerido || ''} onChange={e => setWfData({ ...wfData, preco_next_sugerido: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-200" placeholder="0.00" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Motivo da Recusa</label>
+                      <textarea value={wfData.motivo_recusa || ''} onChange={e => setWfData({ ...wfData, motivo_recusa: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-200" rows={2} placeholder="Ex: Preco acima do mercado..." />
+                    </div>
+                  </>
+                )}
+
+                {workflowModal.type === 'cancel' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Motivo do Cancelamento *</label>
+                    <textarea value={wfData.motivo_cancelamento || ''} onChange={e => setWfData({ ...wfData, motivo_cancelamento: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-red-200" rows={2} placeholder="Ex: Produto descontinuado, preco inviavel..." />
+                  </div>
+                )}
+
+                {workflowModal.type === 'faturar' && (
+                  <div className="bg-emerald-50 rounded-xl p-4 text-sm text-emerald-800">
+                    <p className="font-bold mb-1">Confirmar faturamento</p>
+                    <p>Ao confirmar, os produtos deste pedido serao enviados automaticamente para a aba de <strong>Produtos Comprados</strong> para o time de marketing.</p>
+                  </div>
+                )}
               </div>
               <div className="flex justify-end gap-3 p-6 border-t">
-                <button onClick={() => setRespondingTo(null)} className="px-4 py-2 text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200">Cancelar</button>
-                <button onClick={() => handleResponder(respondingTo)} disabled={!responseData.preco_resposta || !responseData.prazo_resposta} className="px-4 py-2 text-white rounded-xl disabled:opacity-50" style={{ backgroundColor: COLORS.purple }}>Enviar Resposta</button>
+                <button onClick={() => setWorkflowModal(null)} className="px-4 py-2 text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200">Voltar</button>
+                {workflowModal.type === 'approve' && (
+                  <button onClick={() => advanceStatus(workflowModal.pedido, 'aprovado', { pedido_next_ref: wfData.pedido_next_ref || null })} className="px-4 py-2 text-white rounded-xl bg-green-600 hover:bg-green-700">Confirmar Aprovacao</button>
+                )}
+                {workflowModal.type === 'reject' && (
+                  <button onClick={() => advanceStatus(workflowModal.pedido, 'preco_recusado', { preco_next_sugerido: Number(wfData.preco_next_sugerido) || null, motivo_recusa: wfData.motivo_recusa || null })} className="px-4 py-2 text-white rounded-xl bg-orange-600 hover:bg-orange-700">Registrar Recusa</button>
+                )}
+                {workflowModal.type === 'cancel' && (
+                  <button onClick={() => advanceStatus(workflowModal.pedido, 'cancelado', { motivo_cancelamento: wfData.motivo_cancelamento || null })} disabled={!wfData.motivo_cancelamento} className="px-4 py-2 text-white rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50">Cancelar Pedido</button>
+                )}
+                {workflowModal.type === 'faturar' && (
+                  <button onClick={() => advanceStatus(workflowModal.pedido, 'faturado')} className="px-4 py-2 text-white rounded-xl bg-emerald-600 hover:bg-emerald-700">Confirmar Faturamento</button>
+                )}
               </div>
             </div>
           </div>
