@@ -948,12 +948,12 @@ const App = () => {
       { label: 'SISTEMA', ids: ['admin'] },
     ];
 
-    const marketingChildren = ['marketing', 'gestao_anuncios', 'oportunidades', 'aguamarinha'];
+    const marketingChildren = ['marketing', 'gestao_anuncios', 'oportunidades', 'aguamarinha', 'padrao_sniff'];
 
     const renderNavItem = (item) => {
       const isMarketingGroup = item.id === 'marketing';
       const isMarketingExpanded = isMarketingGroup && marketingChildren.includes(activeTab);
-      const isActive = activeTab === item.id || (isMarketingGroup && ['gestao_anuncios', 'oportunidades', 'aguamarinha'].includes(activeTab));
+      const isActive = activeTab === item.id || (isMarketingGroup && ['gestao_anuncios', 'oportunidades', 'aguamarinha', 'padrao_sniff'].includes(activeTab));
 
       return (
         <div key={item.id} className="relative">
@@ -988,6 +988,7 @@ const App = () => {
                 { id: 'gestao_anuncios', label: 'Produtos Parados' },
                 { id: 'oportunidades', label: 'Oportunidades' },
                 { id: 'aguamarinha', label: 'Agua Marinha' },
+                { id: 'padrao_sniff', label: 'Padrao Sniff' },
               ].map(sub => (
                 <button key={sub.id}
                   onClick={() => setActiveTab(sub.id)}
@@ -2317,7 +2318,6 @@ const App = () => {
 
     const allSubTabs = [
       { id: 'dashboard-am', label: 'Dashboard ML', icon: LayoutDashboard, permission: 'dashboard_am' },
-      { id: 'checklist', label: 'Padrao Sniff', icon: CheckCircle2, permission: 'checklist' },
       { id: 'defesa', label: 'Defesa Catalogo', icon: ShieldCheck, permission: 'defesa' },
       { id: 'tracker', label: 'Tracker Clips', icon: Video, permission: 'tracker' },
       { id: 'preco', label: 'Semaforo PI', icon: DollarSign, permission: 'preco' },
@@ -2445,67 +2445,6 @@ const App = () => {
                   </div>
                 </div>
               </div>
-            </div>
-          );
-
-        case 'checklist':
-          return (
-            <div className="space-y-4 animate-fadeIn">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold flex items-center gap-2"><CheckCircle2 className="text-[#6B1B8E]" /> Padrao Sniff - Curva A Top 20</h3>
-                <button onClick={() => setShowAddProduto(true)} className="flex items-center gap-1 bg-[#6B1B8E] text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-[#4A1063]"><Plus size={14} /> Adicionar Produto</button>
-              </div>
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="text-left p-3 text-xs font-bold text-gray-500 min-w-[200px]">Produto</th>
-                      {checkLabels.map(l => <th key={l} className="p-3 text-xs font-bold text-gray-500 text-center min-w-[60px]">{l}</th>)}
-                      <th className="p-3 text-xs font-bold text-gray-500 text-center">Score</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {amProdutos.map(p => {
-                      const score = checkFields.reduce((s, f) => s + (p[f] ? 1 : 0), 0);
-                      const rowColor = score === 9 ? 'bg-green-50' : score >= 5 ? 'bg-yellow-50' : 'bg-red-50';
-                      return (
-                        <tr key={p.id} className={`border-b border-gray-50 ${rowColor} hover:brightness-95 transition-all`}>
-                          <td className="p-3">
-                            <p className="font-bold text-gray-800 text-xs">{p.nome}</p>
-                            <p className="text-[10px] text-gray-400">{p.mlc}</p>
-                          </td>
-                          {checkFields.map(f => (
-                            <td key={f} className="p-3 text-center">
-                              <button onClick={() => toggleCheck(p.id, f, p[f])} className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-all ${p[f] ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 hover:border-[#6B1B8E]'}`}>
-                                {p[f] && <CheckCircle size={14} />}
-                              </button>
-                            </td>
-                          ))}
-                          <td className="p-3 text-center">
-                            <span className={`text-xs font-black px-2 py-1 rounded-full ${score === 9 ? 'bg-green-100 text-green-700' : score >= 5 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{score}/9</span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {/* Add Product Modal */}
-              {showAddProduto && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAddProduto(false)}>
-                  <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
-                    <h3 className="text-lg font-bold mb-4">Adicionar Produto</h3>
-                    <div className="space-y-3">
-                      <input placeholder="Nome do Produto" value={novoProduto.nome} onChange={e => setNovoProduto({...novoProduto, nome: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
-                      <input placeholder="Codigo MLC" value={novoProduto.mlc} onChange={e => setNovoProduto({...novoProduto, mlc: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
-                    </div>
-                    <div className="flex gap-2 mt-4">
-                      <button onClick={() => setShowAddProduto(false)} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm font-bold hover:bg-gray-50">Cancelar</button>
-                      <button onClick={handleAddProduto} className="flex-1 py-2 bg-[#6B1B8E] text-white rounded-lg text-sm font-bold hover:bg-[#4A1063]">Salvar</button>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           );
 
@@ -2704,6 +2643,378 @@ const App = () => {
           ))}
         </div>
         {renderSubContent()}
+      </div>
+    );
+  };
+
+  // === PADRAO SNIFF VIEW: Checklist de qualidade com sync BaseLinker ===
+  const PadraoSniffView = () => {
+    const [sniffProdutos, setSniffProdutos] = useState([]);
+    const [sniffSearch, setSniffSearch] = useState('');
+    const [sniffSyncing, setSniffSyncing] = useState(false);
+    const [sniffSyncProgress, setSniffSyncProgress] = useState('');
+    const [sniffEditProduct, setSniffEditProduct] = useState(null);
+    const [sniffEditForm, setSniffEditForm] = useState({});
+    const [sniffShowAdd, setSniffShowAdd] = useState(false);
+    const [sniffNewProduct, setSniffNewProduct] = useState({ nome: '', sku: '', ean: '', preco: 0, mlc: '' });
+    const [sniffLastSync, setSniffLastSync] = useState(localStorage.getItem('sniff-padrao-last-sync') || null);
+
+    const checkFields = ['titulo_seo', 'campo_modelo', 'marca', 'capa', 'clip', 'afiliados', 'pi', 'ads', 'full_check'];
+    const checkLabels = ['Titulo SEO', 'Modelo', 'Marca', 'Capa', 'Clip', 'Afiliados', 'PI', 'Ads', 'FULL'];
+
+    useEffect(() => {
+      supabase.from('am_produtos').select('*').order('nome', { ascending: true }).then(({ data }) => setSniffProdutos(data || []));
+    }, []);
+
+    const toggleSniffCheck = async (prodId, field, current) => {
+      await supabase.from('am_produtos').update({ [field]: !current }).eq('id', prodId);
+      setSniffProdutos(prev => prev.map(p => p.id === prodId ? { ...p, [field]: !current } : p));
+      // Also update amProdutos for AguaMarinha dashboard KPIs
+      setAmProdutos(prev => prev.map(p => p.id === prodId ? { ...p, [field]: !current } : p));
+    };
+
+    const syncBaseLinkerSniff = async () => {
+      setSniffSyncing(true);
+      setSniffSyncProgress('Buscando produtos do BaseLinker...');
+      try {
+        let allProducts = [];
+        let page = 1;
+        let hasMore = true;
+
+        while (hasMore) {
+          setSniffSyncProgress(`Buscando pagina ${page}...`);
+          const res = await fetch(`/api/baselinker/products?page=${page}`);
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || 'Erro ao buscar produtos');
+          allProducts = [...allProducts, ...(data.products || [])];
+          hasMore = (data.products || []).length >= 100;
+          page++;
+        }
+
+        setSniffSyncProgress(`Sincronizando ${allProducts.length} produtos...`);
+        let updated = 0, inserted = 0;
+
+        for (const p of allProducts) {
+          if (!p.sku && !p.name) continue;
+          const prodData = {
+            sku: p.sku || '',
+            nome: p.name || '',
+            ean: p.ean || '',
+            preco: parseFloat(p.price1) || 0,
+            estoque: parseInt(p.stock) || 0,
+            imagem_url: (p.images && p.images[0]) || null,
+            baselinker_id: String(p.id || ''),
+            peso: parseFloat(p.weight) || 0,
+            is_kit: /KIT\d*/i.test(p.sku || ''),
+          };
+
+          const { data: existing } = await supabase.from('am_produtos').select('id').eq('sku', prodData.sku).single();
+          if (existing) {
+            await supabase.from('am_produtos').update(prodData).eq('id', existing.id);
+            updated++;
+          } else {
+            await supabase.from('am_produtos').insert([prodData]);
+            inserted++;
+          }
+        }
+
+        const { data: refreshed } = await supabase.from('am_produtos').select('*').order('nome', { ascending: true });
+        setSniffProdutos(refreshed || []);
+        setAmProdutos(refreshed || []);
+
+        const now = new Date().toISOString();
+        localStorage.setItem('sniff-padrao-last-sync', now);
+        setSniffLastSync(now);
+
+        setSniffSyncProgress('');
+        alert(`Sync concluido! ${inserted} novos, ${updated} atualizados. Total: ${allProducts.length} produtos.`);
+      } catch (err) {
+        console.error('Sync error:', err);
+        alert('Erro ao sincronizar: ' + err.message);
+        setSniffSyncProgress('');
+      }
+      setSniffSyncing(false);
+    };
+
+    const handleSniffDelete = async (id) => {
+      if (!window.confirm('Tem certeza que deseja excluir este produto?')) return;
+      await supabase.from('am_produtos').delete().eq('id', id);
+      setSniffProdutos(prev => prev.filter(p => p.id !== id));
+      setAmProdutos(prev => prev.filter(p => p.id !== id));
+    };
+
+    const handleSniffEdit = (product) => {
+      setSniffEditProduct(product);
+      setSniffEditForm({
+        nome: product.nome || '',
+        sku: product.sku || '',
+        ean: product.ean || '',
+        preco: product.preco || 0,
+        mlc: product.mlc || '',
+        estoque: product.estoque || 0,
+        peso: product.peso || 0,
+      });
+    };
+
+    const handleSniffSaveEdit = async () => {
+      if (!sniffEditProduct) return;
+      await supabase.from('am_produtos').update(sniffEditForm).eq('id', sniffEditProduct.id);
+      const updated = { ...sniffEditProduct, ...sniffEditForm };
+      setSniffProdutos(prev => prev.map(p => p.id === sniffEditProduct.id ? updated : p));
+      setAmProdutos(prev => prev.map(p => p.id === sniffEditProduct.id ? updated : p));
+      setSniffEditProduct(null);
+    };
+
+    const handleSniffAdd = async () => {
+      if (!sniffNewProduct.nome) return;
+      const { data } = await supabase.from('am_produtos').insert([{
+        nome: sniffNewProduct.nome,
+        sku: sniffNewProduct.sku,
+        ean: sniffNewProduct.ean,
+        preco: parseFloat(sniffNewProduct.preco) || 0,
+        mlc: sniffNewProduct.mlc,
+        is_kit: /KIT\d*/i.test(sniffNewProduct.sku || ''),
+      }]).select();
+      if (data) {
+        setSniffProdutos(prev => [...prev, data[0]]);
+        setAmProdutos(prev => [...prev, data[0]]);
+        setSniffShowAdd(false);
+        setSniffNewProduct({ nome: '', sku: '', ean: '', preco: 0, mlc: '' });
+      }
+    };
+
+    const filtered = sniffProdutos.filter(p =>
+      (!sniffSearch || (p.nome || '').toLowerCase().includes(sniffSearch.toLowerCase()) || (p.sku || '').toLowerCase().includes(sniffSearch.toLowerCase()))
+    );
+
+    const totalScore = filtered.length > 0 ? Math.round(filtered.reduce((sum, p) => sum + checkFields.reduce((s, f) => s + (p[f] ? 1 : 0), 0), 0) / filtered.length * 100 / 9) : 0;
+    const fullCount = filtered.filter(p => checkFields.every(f => p[f])).length;
+
+    return (
+      <div className="space-y-6 animate-fadeIn">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-black text-gray-800 flex items-center gap-2"><CheckCircle2 className="text-[#6B1B8E]" /> Padrao Sniff</h2>
+            <p className="text-sm text-gray-500 mt-1">Checklist de qualidade para todos os produtos ({sniffProdutos.length} SKUs)</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setSniffShowAdd(true)} className="flex items-center gap-1 bg-[#6B1B8E] text-white px-3 py-2 rounded-xl text-sm font-bold hover:bg-[#4A1063] transition-all">
+              <Plus size={14} /> Adicionar
+            </button>
+            <button
+              onClick={syncBaseLinkerSniff}
+              disabled={sniffSyncing}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${sniffSyncing ? 'bg-gray-200 text-gray-500' : 'bg-green-600 text-white hover:bg-green-700'}`}
+            >
+              <RefreshCw size={16} className={sniffSyncing ? 'animate-spin' : ''} />
+              {sniffSyncing ? 'Sincronizando...' : 'Sincronizar BaseLinker'}
+            </button>
+          </div>
+        </div>
+
+        {/* Sync progress */}
+        {sniffSyncProgress && (
+          <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-2 rounded-xl text-sm flex items-center gap-2">
+            <RefreshCw size={14} className="animate-spin" /> {sniffSyncProgress}
+          </div>
+        )}
+
+        {/* KPI Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+            <p className="text-[10px] uppercase font-bold text-gray-400">Total SKUs</p>
+            <p className="text-2xl font-black text-gray-800">{sniffProdutos.length}</p>
+          </div>
+          <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+            <p className="text-[10px] uppercase font-bold text-gray-400">FULL (9/9)</p>
+            <p className="text-2xl font-black text-green-600">{fullCount}</p>
+          </div>
+          <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+            <p className="text-[10px] uppercase font-bold text-gray-400">Score Medio</p>
+            <p className="text-2xl font-black text-[#6B1B8E]">{totalScore}%</p>
+          </div>
+          <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+            <p className="text-[10px] uppercase font-bold text-gray-400">Ultimo Sync</p>
+            <p className="text-sm font-bold text-gray-600">{sniffLastSync ? new Date(sniffLastSync).toLocaleDateString('pt-BR') + ' ' + new Date(sniffLastSync).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'Nunca'}</p>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            placeholder="Buscar por nome ou SKU..."
+            value={sniffSearch}
+            onChange={e => setSniffSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-purple-200"
+          />
+        </div>
+
+        {/* Table */}
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto shadow-sm">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="text-left p-3 text-xs font-bold text-gray-500 w-[50px]">Img</th>
+                <th className="text-left p-3 text-xs font-bold text-gray-500 min-w-[80px]">SKU</th>
+                <th className="text-left p-3 text-xs font-bold text-gray-500 min-w-[200px]">Produto</th>
+                <th className="text-right p-3 text-xs font-bold text-gray-500 min-w-[80px]">Preco</th>
+                <th className="text-center p-3 text-xs font-bold text-gray-500 min-w-[60px]">Estoque</th>
+                <th className="text-center p-3 text-xs font-bold text-gray-500 min-w-[50px]">Kit?</th>
+                {checkLabels.map(l => <th key={l} className="p-3 text-xs font-bold text-gray-500 text-center min-w-[55px]">{l}</th>)}
+                <th className="p-3 text-xs font-bold text-gray-500 text-center min-w-[60px]">Score</th>
+                <th className="p-3 text-xs font-bold text-gray-500 text-center min-w-[90px]">Acoes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(p => {
+                const score = checkFields.reduce((s, f) => s + (p[f] ? 1 : 0), 0);
+                const rowColor = score === 9 ? 'bg-green-50' : score >= 5 ? 'bg-yellow-50' : 'bg-red-50';
+                return (
+                  <tr key={p.id} className={`border-b border-gray-50 ${rowColor} hover:brightness-95 transition-all`}>
+                    <td className="p-2">
+                      {p.imagem_url ? (
+                        <img src={p.imagem_url} alt="" className="w-10 h-10 rounded-lg object-cover border border-gray-200" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400"><Package size={16} /></div>
+                      )}
+                    </td>
+                    <td className="p-3">
+                      <p className="text-xs font-mono font-bold text-gray-700">{p.sku || '-'}</p>
+                    </td>
+                    <td className="p-3">
+                      <p className="font-bold text-gray-800 text-xs">{p.nome}</p>
+                      {p.mlc && <p className="text-[10px] text-gray-400">{p.mlc}</p>}
+                    </td>
+                    <td className="p-3 text-right">
+                      <p className="text-xs font-bold text-gray-700">R$ {(parseFloat(p.preco) || 0).toFixed(2)}</p>
+                    </td>
+                    <td className="p-3 text-center">
+                      <span className={`text-xs font-bold ${(p.estoque || 0) > 0 ? 'text-green-600' : 'text-red-500'}`}>{p.estoque || 0}</span>
+                    </td>
+                    <td className="p-3 text-center">
+                      {(p.is_kit || /KIT\d*/i.test(p.sku || '')) && (
+                        <span className="text-[10px] font-black bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">KIT</span>
+                      )}
+                    </td>
+                    {checkFields.map(f => (
+                      <td key={f} className="p-3 text-center">
+                        <button onClick={() => toggleSniffCheck(p.id, f, p[f])} className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-all ${p[f] ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 hover:border-[#6B1B8E]'}`}>
+                          {p[f] && <CheckCircle size={14} />}
+                        </button>
+                      </td>
+                    ))}
+                    <td className="p-3 text-center">
+                      <span className={`text-xs font-black px-2 py-1 rounded-full ${score === 9 ? 'bg-green-100 text-green-700' : score >= 5 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{score}/9</span>
+                    </td>
+                    <td className="p-3 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button onClick={() => handleSniffEdit(p)} className="p-1.5 rounded-lg hover:bg-blue-100 text-blue-600 transition-all" title="Editar">
+                          <Edit2 size={14} />
+                        </button>
+                        <button onClick={() => handleSniffDelete(p.id)} className="p-1.5 rounded-lg hover:bg-red-100 text-red-500 transition-all" title="Excluir">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filtered.length === 0 && (
+                <tr><td colSpan={checkLabels.length + 7} className="text-center py-12 text-gray-400">
+                  {sniffSearch ? 'Nenhum produto encontrado para essa busca' : 'Nenhum produto cadastrado. Clique em "Sincronizar BaseLinker" para importar.'}
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Edit Modal */}
+        {sniffEditProduct && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSniffEditProduct(null)}>
+            <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl" onClick={e => e.stopPropagation()}>
+              <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Edit2 size={18} className="text-[#6B1B8E]" /> Editar Produto</h3>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-bold text-gray-500">Nome</label>
+                  <input value={sniffEditForm.nome} onChange={e => setSniffEditForm({...sniffEditForm, nome: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500">SKU</label>
+                    <input value={sniffEditForm.sku} onChange={e => setSniffEditForm({...sniffEditForm, sku: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500">EAN</label>
+                    <input value={sniffEditForm.ean} onChange={e => setSniffEditForm({...sniffEditForm, ean: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500">Preco (R$)</label>
+                    <input type="number" step="0.01" value={sniffEditForm.preco} onChange={e => setSniffEditForm({...sniffEditForm, preco: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500">Estoque</label>
+                    <input type="number" value={sniffEditForm.estoque} onChange={e => setSniffEditForm({...sniffEditForm, estoque: parseInt(e.target.value) || 0})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500">Peso (kg)</label>
+                    <input type="number" step="0.001" value={sniffEditForm.peso} onChange={e => setSniffEditForm({...sniffEditForm, peso: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500">Codigo MLC</label>
+                  <input value={sniffEditForm.mlc} onChange={e => setSniffEditForm({...sniffEditForm, mlc: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
+                </div>
+              </div>
+              <div className="flex gap-2 mt-5">
+                <button onClick={() => setSniffEditProduct(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-bold hover:bg-gray-50">Cancelar</button>
+                <button onClick={handleSniffSaveEdit} className="flex-1 py-2.5 bg-[#6B1B8E] text-white rounded-xl text-sm font-bold hover:bg-[#4A1063]">Salvar</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Add Product Modal */}
+        {sniffShowAdd && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSniffShowAdd(false)}>
+            <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl" onClick={e => e.stopPropagation()}>
+              <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Plus size={18} className="text-[#6B1B8E]" /> Adicionar Produto</h3>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-bold text-gray-500">Nome do Produto</label>
+                  <input value={sniffNewProduct.nome} onChange={e => setSniffNewProduct({...sniffNewProduct, nome: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" placeholder="Ex: Kit 4 Potes Hermeticos" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500">SKU</label>
+                    <input value={sniffNewProduct.sku} onChange={e => setSniffNewProduct({...sniffNewProduct, sku: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" placeholder="F0585KIT4" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500">EAN</label>
+                    <input value={sniffNewProduct.ean} onChange={e => setSniffNewProduct({...sniffNewProduct, ean: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500">Preco (R$)</label>
+                    <input type="number" step="0.01" value={sniffNewProduct.preco} onChange={e => setSniffNewProduct({...sniffNewProduct, preco: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500">Codigo MLC</label>
+                    <input value={sniffNewProduct.mlc} onChange={e => setSniffNewProduct({...sniffNewProduct, mlc: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" />
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-5">
+                <button onClick={() => setSniffShowAdd(false)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-bold hover:bg-gray-50">Cancelar</button>
+                <button onClick={handleSniffAdd} className="flex-1 py-2.5 bg-[#6B1B8E] text-white rounded-xl text-sm font-bold hover:bg-[#4A1063]">Salvar</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -7229,6 +7540,7 @@ const App = () => {
       case 'academy': return <AcademyView />;
       case 'recebimento': return <RecebimentoView />;
       case 'aguamarinha': return <AguaMarinhaView />;
+      case 'padrao_sniff': return <PadraoSniffView />;
       case 'vendedor': return <VendedorView />;
       case 'analytics': return <AnalyticsView />;
       case 'times': return <TimesView />;
