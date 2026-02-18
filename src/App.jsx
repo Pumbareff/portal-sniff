@@ -2651,6 +2651,7 @@ const App = () => {
   const PadraoSniffView = () => {
     const [sniffProdutos, setSniffProdutos] = useState([]);
     const [sniffSearch, setSniffSearch] = useState('');
+    const [sniffSortEstoque, setSniffSortEstoque] = useState(null); // null | 'desc' | 'asc'
     const [sniffSyncing, setSniffSyncing] = useState(false);
     const [sniffSyncProgress, setSniffSyncProgress] = useState('');
     const [sniffEditProduct, setSniffEditProduct] = useState(null);
@@ -2845,7 +2846,11 @@ const App = () => {
 
     const filtered = sniffProdutos.filter(p =>
       (!sniffSearch || (p.nome || '').toLowerCase().includes(sniffSearch.toLowerCase()) || (p.sku || '').toLowerCase().includes(sniffSearch.toLowerCase()))
-    );
+    ).sort((a, b) => {
+      if (sniffSortEstoque === 'desc') return (b.estoque || 0) - (a.estoque || 0);
+      if (sniffSortEstoque === 'asc') return (a.estoque || 0) - (b.estoque || 0);
+      return 0;
+    });
 
     const totalScore = filtered.length > 0 ? Math.round(filtered.reduce((sum, p) => sum + checkFields.reduce((s, f) => s + (p[f] ? 1 : 0), 0), 0) / filtered.length * 100 / 9) : 0;
     const fullCount = filtered.filter(p => checkFields.every(f => p[f])).length;
@@ -2932,7 +2937,11 @@ const App = () => {
                 <th className="text-left p-3 text-xs font-bold text-gray-500 min-w-[80px]">SKU</th>
                 <th className="text-left p-3 text-xs font-bold text-gray-500 min-w-[200px]">Produto</th>
                 <th className="text-right p-3 text-xs font-bold text-gray-500 min-w-[80px]">Preco</th>
-                <th className="text-center p-3 text-xs font-bold text-gray-500 min-w-[60px]">Estoque</th>
+                <th className="text-center p-3 text-xs font-bold min-w-[60px]">
+                  <button onClick={() => setSniffSortEstoque(prev => prev === null ? 'desc' : prev === 'desc' ? 'asc' : null)} className={`flex items-center justify-center gap-1 mx-auto transition-all ${sniffSortEstoque ? 'text-[#6B1B8E]' : 'text-gray-500 hover:text-gray-700'}`}>
+                    Estoque {sniffSortEstoque === 'desc' ? '\u2193' : sniffSortEstoque === 'asc' ? '\u2191' : '\u2195'}
+                  </button>
+                </th>
                 <th className="text-center p-3 text-xs font-bold text-gray-500 min-w-[50px]">Kit?</th>
                 {checkLabels.map(l => <th key={l} className="p-3 text-xs font-bold text-gray-500 text-center min-w-[55px]">{l}</th>)}
                 <th className="p-3 text-xs font-bold text-gray-500 text-center min-w-[60px]">Score</th>
