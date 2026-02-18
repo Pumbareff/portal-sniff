@@ -5406,9 +5406,9 @@ const App = () => {
       ja_vendemos: false
     });
 
-    const marketplaces = ['Mercado Livre', 'Shopee', 'Amazon', 'Magalu', 'Shein', 'Site Proprio'];
+    const marketplaces = ['Mercado Livre', 'Shopee', 'Amazon', 'TikTok', 'Temu'];
     const tiposEstrategia = ['lancamento', 'reposicao', 'promocional', 'sazonal', 'teste'];
-    const acoesOptions = ['Criar Anuncio ML', 'Criar Anuncio Shopee', 'Foto Produto', 'Video/Clip', 'Campanha Ads', 'Precificacao PI', 'Cadastro Afiliados', 'Full/FBS'];
+    const acoesOptions = ['Catalogo MercadoLivre', 'Criar Anuncio Shopee', 'Video/Clip', 'Campanha Ads', 'Cadastro Afiliados', 'Full/FBS'];
     const statusFlow = ['pendente_analise', 'em_planejamento', 'em_execucao', 'concluido'];
     const statusLabels = { pendente_analise: 'Pendente', em_planejamento: 'Em Planejamento', em_execucao: 'Em Execucao', concluido: 'Concluido' };
     const statusColors = { pendente_analise: 'bg-yellow-100 text-yellow-800', em_planejamento: 'bg-blue-100 text-blue-800', em_execucao: 'bg-purple-100 text-purple-800', concluido: 'bg-green-100 text-green-800' };
