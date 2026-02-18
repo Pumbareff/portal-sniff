@@ -2659,12 +2659,28 @@ const App = () => {
     const [sniffNewProduct, setSniffNewProduct] = useState({ nome: '', sku: '', ean: '', preco: 0, mlc: '' });
     const [sniffLastSync, setSniffLastSync] = useState(localStorage.getItem('sniff-padrao-last-sync') || null);
     const [sniffSelected, setSniffSelected] = useState(new Set());
+    const [topSellers, setTopSellers] = useState({ thisMonth: new Set(), lastMonth: new Set() });
+    const [topSellersLoading, setTopSellersLoading] = useState(false);
 
     const checkFields = ['titulo_seo', 'campo_modelo', 'marca', 'capa', 'clip', 'afiliados', 'pi', 'ads', 'full_check'];
     const checkLabels = ['Titulo SEO', 'Modelo', 'Marca', 'Capa', 'Clip', 'Afiliados', 'PI', 'Ads', 'FULL'];
 
     useEffect(() => {
       supabase.from('am_produtos').select('*').order('nome', { ascending: true }).then(({ data }) => setSniffProdutos(data || []));
+      // Fetch top sellers
+      setTopSellersLoading(true);
+      fetch('/api/baselinker/top-sellers')
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) {
+            setTopSellers({
+              thisMonth: new Set(data.thisMonthSkus || []),
+              lastMonth: new Set(data.lastMonthSkus || []),
+            });
+          }
+        })
+        .catch(err => console.error('Top sellers error:', err))
+        .finally(() => setTopSellersLoading(false));
     }, []);
 
     const toggleSniffCheck = async (prodId, field, current) => {
@@ -2871,6 +2887,13 @@ const App = () => {
           </div>
         </div>
 
+        {/* Star Legend */}
+        <div className="flex items-center gap-4 text-xs text-gray-500">
+          <span className="flex items-center gap-1"><Star size={12} fill="currentColor" className="text-yellow-500" /> Top 30 mais vendidos este mes</span>
+          <span className="flex items-center gap-1"><Star size={12} fill="currentColor" className="text-gray-400" /> Top 30 mais vendidos mes passado</span>
+          {topSellersLoading && <span className="text-purple-500 flex items-center gap-1"><RefreshCw size={12} className="animate-spin" /> Carregando ranking...</span>}
+        </div>
+
         {/* Search */}
         <div className="relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -2925,7 +2948,15 @@ const App = () => {
                       <p className="text-xs font-mono font-bold text-gray-700">{p.sku || '-'}</p>
                     </td>
                     <td className="p-3">
-                      <p className="font-bold text-gray-800 text-xs">{p.nome}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-bold text-gray-800 text-xs">{p.nome}</p>
+                        {p.sku && topSellers.thisMonth.has(p.sku) && (
+                          <span title="Top 30 este mes" className="text-yellow-500 flex-shrink-0"><Star size={14} fill="currentColor" /></span>
+                        )}
+                        {p.sku && !topSellers.thisMonth.has(p.sku) && topSellers.lastMonth.has(p.sku) && (
+                          <span title="Top 30 mes passado" className="text-gray-400 flex-shrink-0"><Star size={14} fill="currentColor" /></span>
+                        )}
+                      </div>
                       {p.mlc && <p className="text-[10px] text-gray-400">{p.mlc}</p>}
                     </td>
                     <td className="p-3 text-right">
