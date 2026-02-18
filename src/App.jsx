@@ -2667,7 +2667,39 @@ const App = () => {
     const checkLabels = ['Titulo SEO', 'Modelo', 'Marca', 'Capa', 'Clip', 'Afiliados', 'PI', 'Ads', 'FULL'];
 
     useEffect(() => {
-      supabase.from('am_produtos').select('*').order('nome', { ascending: true }).then(({ data }) => setSniffProdutos(data || []));
+      // 1. Load checkboxes from Supabase (instant), then merge fresh stock from BaseLinker
+      supabase.from('am_produtos').select('*').order('nome', { ascending: true }).then(({ data }) => {
+        const supaData = data || [];
+        setSniffProdutos(supaData);
+        // 2. Auto-fetch fresh stock/price from BaseLinker in background
+        fetch('/api/baselinker/products').then(r => r.json()).then(blData => {
+          if (blData.success && blData.products) {
+            const blMap = new Map();
+            blData.products.forEach(p => { if (p.sku) blMap.set(p.sku, p); });
+            // Merge: BaseLinker stock/price over Supabase checkboxes
+            const merged = supaData.map(sp => {
+              const bl = blMap.get(sp.sku);
+              if (bl) {
+                blMap.delete(sp.sku); // mark as matched
+                return { ...sp, estoque: parseInt(bl.stock) || 0, preco: parseFloat(bl.price1) || sp.preco };
+              }
+              return sp;
+            });
+            // Add new products from BaseLinker not yet in Supabase
+            blMap.forEach((bl) => {
+              if (bl.sku) {
+                merged.push({
+                  sku: bl.sku, nome: bl.name, ean: bl.ean || '', preco: parseFloat(bl.price1) || 0,
+                  estoque: parseInt(bl.stock) || 0, baselinker_id: String(bl.id || ''),
+                  peso: parseFloat(bl.weight) || 0, is_kit: /KIT\d*/i.test(bl.sku || ''),
+                });
+              }
+            });
+            merged.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+            setSniffProdutos(merged);
+          }
+        }).catch(err => console.error('BaseLinker auto-refresh error:', err));
+      });
       // Fetch top sellers from orders endpoint
       setTopSellersLoading(true);
       const now = new Date();
