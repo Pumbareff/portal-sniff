@@ -79,7 +79,7 @@ const COLORS = {
 };
 
 // Extracted modal component - prevents parent re-render from destroying DOM/losing focus
-const PEDIDO_EMPTY_ITEM = { sku: '', produto: '', quantidade: '', preco_unitario: '', peso_unitario: '' };
+const PEDIDO_EMPTY_ITEM = { sku: '', produto: '', quantidade: '', preco_unitario: '', peso_unitario: '', ncm: '', un: '', ipi_pct: '', valor_nf: '' };
 
 const NovaOrdemModal = ({ isOpen, onClose, onSubmit }) => {
   const [formData, setFormData] = useState({
@@ -101,6 +101,58 @@ const NovaOrdemModal = ({ isOpen, onClose, onSubmit }) => {
       return { ...prev, items: newItems };
     });
   };
+  const updateItemFields = (idx, fields) => {
+    setFormData(prev => {
+      const newItems = [...prev.items];
+      newItems[idx] = { ...newItems[idx], ...fields };
+      return { ...prev, items: newItems };
+    });
+  };
+
+  const parseNfXml = (xmlText) => {
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(xmlText, 'text/xml');
+    const dets = xml.getElementsByTagName('det');
+    const items = [];
+    for (let i = 0; i < dets.length; i++) {
+      const det = dets[i];
+      const prod = det.getElementsByTagName('prod')[0];
+      if (!prod) continue;
+      const getText = (parent, tag) => { const el = parent.getElementsByTagName(tag)[0]; return el ? el.textContent.trim() : ''; };
+      const cProd = getText(prod, 'cProd');
+      const xProd = getText(prod, 'xProd');
+      const ncm = getText(prod, 'NCM');
+      const uCom = getText(prod, 'uCom');
+      const vUnCom = parseFloat(getText(prod, 'vUnCom')) || 0;
+      const qCom = parseFloat(getText(prod, 'qCom')) || 0;
+      let ipiPct = 0, vIPI = 0;
+      const ipiTrib = det.getElementsByTagName('IPITrib')[0];
+      if (ipiTrib) { ipiPct = parseFloat(getText(ipiTrib, 'pIPI')) || 0; vIPI = parseFloat(getText(ipiTrib, 'vIPI')) || 0; }
+      const ipiPerUnit = qCom > 0 && vIPI > 0 ? vIPI / qCom : vUnCom * (ipiPct / 100);
+      const precoComIpi = vUnCom + ipiPerUnit;
+      items.push({ sku: cProd, produto: xProd, ncm, un: uCom, quantidade: String(Math.round(qCom)), valor_nf: vUnCom.toFixed(2), ipi_pct: ipiPct ? String(ipiPct) : '', preco_unitario: precoComIpi.toFixed(2), peso_unitario: '' });
+    }
+    return items;
+  };
+
+  const handleNfUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const items = parseNfXml(ev.target.result);
+        if (items.length === 0) { alert('Nenhum item encontrado na NF. Verifique se o arquivo e um XML de NFe valido.'); return; }
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(ev.target.result, 'text/xml');
+        const emitNome = xml.getElementsByTagName('xNome')[0];
+        setFormData(prev => ({ ...prev, fornecedor: emitNome ? emitNome.textContent.trim() : prev.fornecedor, items }));
+      } catch (err) { alert('Erro ao ler XML: ' + err.message); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
   const calcTotals = (items) => {
     let valor = 0, peso = 0, qtd = 0;
     (items || []).forEach(item => {
@@ -136,9 +188,15 @@ const NovaOrdemModal = ({ isOpen, onClose, onSubmit }) => {
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-gray-700">Itens do Pedido *</label>
-              <button onClick={addItem} className="flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-lg text-white" style={{ backgroundColor: COLORS.purple }}>
-                <Plus size={12} /> Adicionar Item
-              </button>
+              <div className="flex gap-2">
+                <label className="flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-lg cursor-pointer text-white" style={{ backgroundColor: '#10B981' }}>
+                  <Upload size={12} /> Importar NF
+                  <input type="file" accept=".xml" onChange={handleNfUpload} className="hidden" />
+                </label>
+                <button onClick={addItem} className="flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-lg text-white" style={{ backgroundColor: COLORS.purple }}>
+                  <Plus size={12} /> Adicionar Item
+                </button>
+              </div>
             </div>
             <div className="space-y-3">
               {formData.items.map((item, idx) => (
@@ -156,25 +214,57 @@ const NovaOrdemModal = ({ isOpen, onClose, onSubmit }) => {
                       <input type="text" value={item.produto} onChange={e => updateItem(idx, 'produto', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="Nome do produto" />
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
+                  {(item.ncm || item.un) && (
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-0.5">NCM</label>
+                        <input type="text" value={item.ncm || ''} readOnly className="w-full px-2 py-1.5 border rounded-lg text-sm bg-gray-100 text-gray-600" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-0.5">UN</label>
+                        <input type="text" value={item.un || ''} readOnly className="w-full px-2 py-1.5 border rounded-lg text-sm bg-gray-100 text-gray-600" />
+                      </div>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-4 gap-2">
                     <div>
                       <label className="block text-xs text-gray-500 mb-0.5">Qtd *</label>
                       <input type="number" value={item.quantidade} onChange={e => updateItem(idx, 'quantidade', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="0" />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-500 mb-0.5">Preco Unit. (R$)</label>
-                      <input type="number" step="0.01" value={item.preco_unitario} onChange={e => updateItem(idx, 'preco_unitario', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="0.00" />
+                      <label className="block text-xs text-gray-500 mb-0.5">Valor NF (R$)</label>
+                      <input type="number" step="0.01" value={item.valor_nf || ''} onChange={e => {
+                        const vnf = e.target.value;
+                        const ipi = Number(item.ipi_pct) || 0;
+                        const preco = vnf ? (Number(vnf) * (1 + ipi / 100)).toFixed(2) : '';
+                        updateItemFields(idx, { valor_nf: vnf, preco_unitario: preco });
+                      }} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="0.00" />
                     </div>
                     <div>
+                      <label className="block text-xs text-gray-500 mb-0.5">IPI %</label>
+                      <input type="number" step="0.01" value={item.ipi_pct || ''} onChange={e => {
+                        const ipi = e.target.value;
+                        const vnf = Number(item.valor_nf) || 0;
+                        const preco = vnf ? (vnf * (1 + (Number(ipi) || 0) / 100)).toFixed(2) : '';
+                        updateItemFields(idx, { ipi_pct: ipi, preco_unitario: preco });
+                      }} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="0" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-0.5">c/ IPI (R$)</label>
+                      <input type="text" value={item.preco_unitario ? Number(item.preco_unitario).toFixed(2) : ''} readOnly className="w-full px-2 py-1.5 border rounded-lg text-sm bg-green-50 text-green-700 font-medium" placeholder="Auto" />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <div className="w-1/3">
                       <label className="block text-xs text-gray-500 mb-0.5">Peso Unit. (kg)</label>
                       <input type="number" step="0.01" value={item.peso_unitario} onChange={e => updateItem(idx, 'peso_unitario', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="0.00" />
                     </div>
+                    {item.quantidade && item.preco_unitario && (
+                      <p className="text-xs mt-3 font-medium" style={{ color: COLORS.purple }}>
+                        Subtotal: R$ {(Number(item.quantidade) * Number(item.preco_unitario)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </p>
+                    )}
                   </div>
-                  {item.quantidade && item.preco_unitario && (
-                    <p className="text-xs text-right mt-1 font-medium" style={{ color: COLORS.purple }}>
-                      Subtotal: R$ {(Number(item.quantidade) * Number(item.preco_unitario)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </p>
-                  )}
                 </div>
               ))}
             </div>
@@ -3527,7 +3617,11 @@ const App = () => {
         items: formData.items.map(i => ({
           sku: i.sku,
           produto: i.produto,
+          ncm: i.ncm || '',
+          un: i.un || '',
           quantidade: Number(i.quantidade) || 0,
+          valor_nf: Number(i.valor_nf) || 0,
+          ipi_pct: Number(i.ipi_pct) || 0,
           preco_unitario: Number(i.preco_unitario) || 0,
           peso_unitario: Number(i.peso_unitario) || 0,
           valor_total: (Number(i.quantidade) || 0) * (Number(i.preco_unitario) || 0),
@@ -3591,8 +3685,12 @@ const App = () => {
           <td style="border:1px solid #ddd;padding:8px;text-align:center">${i + 1}</td>
           <td style="border:1px solid #ddd;padding:8px">${item.sku || '-'}</td>
           <td style="border:1px solid #ddd;padding:8px">${item.produto || '-'}</td>
+          <td style="border:1px solid #ddd;padding:8px;font-size:11px">${item.ncm || '-'}</td>
+          <td style="border:1px solid #ddd;padding:8px;text-align:center">${item.un || '-'}</td>
           <td style="border:1px solid #ddd;padding:8px;text-align:center">${item.quantidade || 0}</td>
-          <td style="border:1px solid #ddd;padding:8px;text-align:right">R$ ${Number(item.preco_unitario || 0).toFixed(2)}</td>
+          <td style="border:1px solid #ddd;padding:8px;text-align:right">${item.valor_nf ? 'R$ ' + Number(item.valor_nf).toFixed(2) : '-'}</td>
+          <td style="border:1px solid #ddd;padding:8px;text-align:right">${item.ipi_pct ? item.ipi_pct + '%' : '-'}</td>
+          <td style="border:1px solid #ddd;padding:8px;text-align:right;color:#059669;font-weight:600">R$ ${Number(item.preco_unitario || 0).toFixed(2)}</td>
           <td style="border:1px solid #ddd;padding:8px;text-align:right">R$ ${((Number(item.quantidade) || 0) * (Number(item.preco_unitario) || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
         </tr>`).join('');
 
@@ -3627,7 +3725,7 @@ const App = () => {
           </div>
           <h3 style="color:#6B1B8E;margin-bottom:10px">Itens do Pedido</h3>
           <table>
-            <thead><tr><th>#</th><th>SKU</th><th>Produto</th><th>Qtd</th><th>Preco Unit.</th><th>Subtotal</th></tr></thead>
+            <thead><tr><th>#</th><th>SKU</th><th>Produto</th><th>NCM</th><th>UN</th><th>Qtd</th><th>Val.NF</th><th>IPI%</th><th>c/IPI</th><th>Subtotal</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
           <div class="totals">
@@ -3845,16 +3943,20 @@ const App = () => {
                     <p className="text-gray-500 mb-2 font-medium">Itens do Pedido ({viewingDetail.items.length})</p>
                     <div className="border rounded-xl overflow-hidden">
                       <table className="w-full text-xs">
-                        <thead><tr className="bg-gray-50 text-gray-500 text-left">
-                          <th className="px-3 py-2">SKU</th><th className="px-3 py-2">Produto</th><th className="px-3 py-2 text-right">Qtd</th><th className="px-3 py-2 text-right">Preco Un.</th><th className="px-3 py-2 text-right">Subtotal</th>
+                        <thead><tr className="bg-gray-50 text-gray-500 text-left text-[10px]">
+                          <th className="px-2 py-2">SKU</th><th className="px-2 py-2">Produto</th><th className="px-2 py-2">NCM</th><th className="px-2 py-2">UN</th><th className="px-2 py-2 text-right">Qtd</th><th className="px-2 py-2 text-right">Val.NF</th><th className="px-2 py-2 text-right">IPI%</th><th className="px-2 py-2 text-right">c/IPI</th><th className="px-2 py-2 text-right">Subtotal</th>
                         </tr></thead>
                         <tbody>{viewingDetail.items.map((item, idx) => (
-                          <tr key={idx} className="border-t">
-                            <td className="px-3 py-2 text-gray-600">{item.sku || '-'}</td>
-                            <td className="px-3 py-2 font-medium">{item.produto}</td>
-                            <td className="px-3 py-2 text-right">{item.quantidade}</td>
-                            <td className="px-3 py-2 text-right">R$ {(Number(item.preco_unitario) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                            <td className="px-3 py-2 text-right font-medium">R$ {((Number(item.quantidade) || 0) * (Number(item.preco_unitario) || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                          <tr key={idx} className="border-t text-[11px]">
+                            <td className="px-2 py-2 text-gray-600">{item.sku || '-'}</td>
+                            <td className="px-2 py-2 font-medium max-w-[120px] truncate" title={item.produto}>{item.produto}</td>
+                            <td className="px-2 py-2 text-gray-500">{item.ncm || '-'}</td>
+                            <td className="px-2 py-2 text-gray-500">{item.un || '-'}</td>
+                            <td className="px-2 py-2 text-right">{item.quantidade}</td>
+                            <td className="px-2 py-2 text-right">{item.valor_nf ? `R$ ${Number(item.valor_nf).toFixed(2)}` : '-'}</td>
+                            <td className="px-2 py-2 text-right">{item.ipi_pct ? `${item.ipi_pct}%` : '-'}</td>
+                            <td className="px-2 py-2 text-right text-green-700 font-medium">R$ {(Number(item.preco_unitario) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                            <td className="px-2 py-2 text-right font-medium">R$ {((Number(item.quantidade) || 0) * (Number(item.preco_unitario) || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                           </tr>
                         ))}</tbody>
                       </table>
