@@ -80,7 +80,7 @@ const COLORS = {
 };
 
 // Extracted modal component - prevents parent re-render from destroying DOM/losing focus
-const PEDIDO_EMPTY_ITEM = { sku: '', produto: '', quantidade: '', preco_unitario: '', peso_unitario: '', ncm: '', un: '', ipi_pct: '', valor_nf: '' };
+const PEDIDO_EMPTY_ITEM = { sku: '', produto: '', quantidade: '', preco_unitario: '', peso_unitario: '', ncm: '', un: '', ipi_pct: '', valor_nf: '', item_status: 'pendente', preco_next_sugerido: '', motivo_recusa: '', dim_produto: '', peso_liquido: '', dim_caixa_master: '', peso_caixa_master: '', unidades_por_caixa: '' };
 
 const NovaOrdemModal = ({ isOpen, onClose, onSubmit }) => {
   const [formData, setFormData] = useState({
@@ -3626,6 +3626,14 @@ const App = () => {
           preco_unitario: Number(i.preco_unitario) || 0,
           peso_unitario: Number(i.peso_unitario) || 0,
           valor_total: (Number(i.quantidade) || 0) * (Number(i.preco_unitario) || 0),
+          item_status: 'pendente',
+          preco_next_sugerido: null,
+          motivo_recusa: null,
+          dim_produto: '',
+          peso_liquido: '',
+          dim_caixa_master: '',
+          peso_caixa_master: '',
+          unidades_por_caixa: '',
         })),
         produto: produtoResumo,
         quantidade: totals.quantidade_total,
@@ -3658,9 +3666,33 @@ const App = () => {
       const tsMap = { enviado_next: 'enviado_next_at', aprovado: 'aprovado_at', ok_faturar: 'ok_faturar_at', faturado: 'faturado_at', cancelado: 'cancelado_at' };
       const updates = { status: newStatus, ...extraData };
       if (tsMap[newStatus]) updates[tsMap[newStatus]] = now;
+      // Undo support: clear forward timestamps
+      if (newStatus === 'pendente') updates.enviado_next_at = null;
+      if (newStatus === 'enviado_next' && !extraData.enviado_next_at) updates.aprovado_at = null;
       try {
         await supabase.from('pedidos_fornecedor').update(updates).eq('id', pedido.id);
       } catch (e) { console.warn('Status update error:', e); }
+      setPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, ...updates } : p));
+      setWorkflowModal(null);
+      setWfData({});
+    };
+
+    const handleNextResponse = async (pedido, itemDecisions, pedidoNextRef) => {
+      const now = new Date().toISOString();
+      const updatedItems = (pedido.items || []).map((item, idx) => {
+        const dec = itemDecisions[idx] || {};
+        return {
+          ...item,
+          item_status: dec.status || 'aprovado',
+          preco_next_sugerido: dec.status === 'recusado' ? (Number(dec.preco_sugerido) || null) : null,
+          motivo_recusa: dec.status === 'recusado' ? (dec.motivo || null) : null,
+        };
+      });
+      const allApproved = updatedItems.every(i => i.item_status === 'aprovado');
+      const newStatus = allApproved ? 'aprovado' : 'preco_recusado';
+      const updates = { items: updatedItems, status: newStatus, pedido_next_ref: pedidoNextRef || null };
+      if (newStatus === 'aprovado') updates.aprovado_at = now;
+      try { await supabase.from('pedidos_fornecedor').update(updates).eq('id', pedido.id); } catch (e) { console.warn(e); }
       setPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, ...updates } : p));
       setWorkflowModal(null);
       setWfData({});
@@ -3891,8 +3923,12 @@ const App = () => {
                         )}
                         {p.status === 'enviado_next' && (
                           <>
-                            <button onClick={() => { setWorkflowModal({ type: 'approve', pedido: p }); setWfData({ pedido_next_ref: '' }); }} className="px-2 py-1 rounded-lg text-xs font-bold text-green-700 bg-green-50 hover:bg-green-100" title="Next aprovou precos"><CheckCircle size={13} className="inline mr-1" />Aprovado</button>
-                            <button onClick={() => { setWorkflowModal({ type: 'reject', pedido: p }); setWfData({ preco_next_sugerido: '', motivo_recusa: '' }); }} className="px-2 py-1 rounded-lg text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100" title="Next recusou precos"><XCircle size={13} className="inline mr-1" />Recusado</button>
+                            <button onClick={() => {
+                              const initDec = (p.items || []).map(item => ({ status: item.item_status === 'recusado' ? 'recusado' : 'aprovado', preco_sugerido: item.preco_next_sugerido || '', motivo: item.motivo_recusa || '' }));
+                              setWorkflowModal({ type: 'respond_items', pedido: p });
+                              setWfData({ pedido_next_ref: p.pedido_next_ref || '', itemDecisions: initDec });
+                            }} className="px-2 py-1 rounded-lg text-xs font-bold text-green-700 bg-green-50 hover:bg-green-100" title="Registrar resposta da Next por SKU"><CheckCircle size={13} className="inline mr-1" />Responder Next</button>
+                            <button onClick={() => advanceStatus(p, 'pendente', { enviado_next_at: null })} className="px-2 py-1 rounded-lg text-xs font-bold text-gray-500 bg-gray-50 hover:bg-gray-200" title="Desfazer - voltar para pendente"><Clock size={13} className="inline mr-1" />Desfazer</button>
                           </>
                         )}
                         {p.status === 'aprovado' && (
@@ -3903,7 +3939,10 @@ const App = () => {
                         )}
                         {p.status === 'preco_recusado' && (
                           <>
-                            <button onClick={() => advanceStatus(p, 'enviado_next')} className="px-2 py-1 rounded-lg text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100" title="Reenviar com ajustes"><Send size={13} className="inline mr-1" />Reenviar</button>
+                            <button onClick={() => {
+                              const resetItems = (p.items || []).map(i => i.item_status === 'recusado' ? { ...i, item_status: 'pendente', preco_next_sugerido: null, motivo_recusa: null } : i);
+                              advanceStatus(p, 'enviado_next', { items: resetItems, aprovado_at: null });
+                            }} className="px-2 py-1 rounded-lg text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100" title="Reenviar itens recusados para Next"><Send size={13} className="inline mr-1" />Reenviar</button>
                             <button onClick={() => { setWorkflowModal({ type: 'cancel', pedido: p }); setWfData({ motivo_cancelamento: '' }); }} className="px-2 py-1 rounded-lg text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200" title="Cancelar pedido"><XCircle size={13} className="inline mr-1" />Cancelar</button>
                           </>
                         )}
@@ -3930,11 +3969,10 @@ const App = () => {
         {/* Workflow Modals */}
         {workflowModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between p-6 border-b">
                 <h3 className="text-lg font-bold text-gray-800">
-                  {workflowModal.type === 'approve' && 'Next Aprovou Precos'}
-                  {workflowModal.type === 'reject' && 'Next Recusou Precos'}
+                  {workflowModal.type === 'respond_items' && 'Resposta da Next - Por SKU'}
                   {workflowModal.type === 'cancel' && 'Cancelar Pedido'}
                   {workflowModal.type === 'faturar' && 'Marcar como Faturado'}
                 </h3>
@@ -3946,22 +3984,52 @@ const App = () => {
                   <p className="text-gray-500">R$ {(workflowModal.pedido.valor_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                 </div>
 
-                {workflowModal.type === 'approve' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Numero do Pedido Next (referencia)</label>
-                    <input type="text" value={wfData.pedido_next_ref || ''} onChange={e => setWfData({ ...wfData, pedido_next_ref: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-green-200" placeholder="Ex: PED-12345" />
-                  </div>
-                )}
-
-                {workflowModal.type === 'reject' && (
+                {workflowModal.type === 'respond_items' && (
                   <>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Preco Sugerido pela Next (R$)</label>
-                      <input type="number" step="0.01" value={wfData.preco_next_sugerido || ''} onChange={e => setWfData({ ...wfData, preco_next_sugerido: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-200" placeholder="0.00" />
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Ref. Pedido Next</label>
+                      <input type="text" value={wfData.pedido_next_ref || ''} onChange={e => setWfData(prev => ({ ...prev, pedido_next_ref: e.target.value }))} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200 text-sm" placeholder="Ex: PED-12345" />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Motivo da Recusa</label>
-                      <textarea value={wfData.motivo_recusa || ''} onChange={e => setWfData({ ...wfData, motivo_recusa: e.target.value })} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-200" rows={2} placeholder="Ex: Preco acima do mercado..." />
+                    <p className="text-xs text-gray-500 font-medium uppercase">Aprovacao por SKU:</p>
+                    <div className="space-y-3">
+                      {(workflowModal.pedido.items || []).map((item, idx) => {
+                        const dec = wfData.itemDecisions?.[idx] || { status: 'aprovado' };
+                        const updateDec = (field, value) => {
+                          setWfData(prev => {
+                            const newDec = [...(prev.itemDecisions || [])];
+                            newDec[idx] = { ...newDec[idx], [field]: value };
+                            return { ...prev, itemDecisions: newDec };
+                          });
+                        };
+                        return (
+                          <div key={idx} className={`border rounded-xl p-3 transition-colors ${dec.status === 'recusado' ? 'border-red-300 bg-red-50' : 'border-green-300 bg-green-50'}`}>
+                            <div className="mb-2">
+                              <p className="font-medium text-sm">{item.sku || '-'} - {item.produto}</p>
+                              <p className="text-xs text-gray-500">Qtd: {item.quantidade} | R$ {Number(item.preco_unitario || 0).toFixed(2)}/un | Subtotal: R$ {((Number(item.quantidade) || 0) * (Number(item.preco_unitario) || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                            </div>
+                            <div className="flex gap-2 mb-1">
+                              <button onClick={() => updateDec('status', 'aprovado')} className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${dec.status === 'aprovado' ? 'bg-green-600 text-white' : 'bg-white text-green-700 border border-green-300 hover:bg-green-100'}`}>
+                                <CheckCircle size={12} className="inline mr-1" />Aprovado
+                              </button>
+                              <button onClick={() => updateDec('status', 'recusado')} className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${dec.status === 'recusado' ? 'bg-red-600 text-white' : 'bg-white text-red-700 border border-red-300 hover:bg-red-100'}`}>
+                                <XCircle size={12} className="inline mr-1" />Recusado
+                              </button>
+                            </div>
+                            {dec.status === 'recusado' && (
+                              <div className="grid grid-cols-2 gap-2 mt-2">
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-0.5">Preco Sugerido (R$)</label>
+                                  <input type="number" step="0.01" value={dec.preco_sugerido || ''} onChange={e => updateDec('preco_sugerido', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-200" placeholder="0.00" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-0.5">Motivo</label>
+                                  <input type="text" value={dec.motivo || ''} onChange={e => updateDec('motivo', e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-red-200" placeholder="Ex: Preco alto" />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </>
                 )}
@@ -3982,11 +4050,8 @@ const App = () => {
               </div>
               <div className="flex justify-end gap-3 p-6 border-t">
                 <button onClick={() => setWorkflowModal(null)} className="px-4 py-2 text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200">Voltar</button>
-                {workflowModal.type === 'approve' && (
-                  <button onClick={() => advanceStatus(workflowModal.pedido, 'aprovado', { pedido_next_ref: wfData.pedido_next_ref || null })} className="px-4 py-2 text-white rounded-xl bg-green-600 hover:bg-green-700">Confirmar Aprovacao</button>
-                )}
-                {workflowModal.type === 'reject' && (
-                  <button onClick={() => advanceStatus(workflowModal.pedido, 'preco_recusado', { preco_next_sugerido: Number(wfData.preco_next_sugerido) || null, motivo_recusa: wfData.motivo_recusa || null })} className="px-4 py-2 text-white rounded-xl bg-orange-600 hover:bg-orange-700">Registrar Recusa</button>
+                {workflowModal.type === 'respond_items' && (
+                  <button onClick={() => handleNextResponse(workflowModal.pedido, wfData.itemDecisions || [], wfData.pedido_next_ref)} className="px-4 py-2 text-white rounded-xl hover:opacity-90" style={{ backgroundColor: COLORS.purple }}>Confirmar Respostas</button>
                 )}
                 {workflowModal.type === 'cancel' && (
                   <button onClick={() => advanceStatus(workflowModal.pedido, 'cancelado', { motivo_cancelamento: wfData.motivo_cancelamento || null })} disabled={!wfData.motivo_cancelamento} className="px-4 py-2 text-white rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50">Cancelar Pedido</button>
@@ -4019,25 +4084,50 @@ const App = () => {
                 {viewingDetail.items?.length > 0 ? (
                   <div className="mt-2">
                     <p className="text-gray-500 mb-2 font-medium">Itens do Pedido ({viewingDetail.items.length})</p>
-                    <div className="border rounded-xl overflow-hidden">
-                      <table className="w-full text-xs">
-                        <thead><tr className="bg-gray-50 text-gray-500 text-left text-[10px]">
-                          <th className="px-2 py-2">SKU</th><th className="px-2 py-2">Produto</th><th className="px-2 py-2">NCM</th><th className="px-2 py-2">UN</th><th className="px-2 py-2 text-right">Qtd</th><th className="px-2 py-2 text-right">Val.NF</th><th className="px-2 py-2 text-right">IPI%</th><th className="px-2 py-2 text-right">c/IPI</th><th className="px-2 py-2 text-right">Subtotal</th>
-                        </tr></thead>
-                        <tbody>{viewingDetail.items.map((item, idx) => (
-                          <tr key={idx} className="border-t text-[11px]">
-                            <td className="px-2 py-2 text-gray-600">{item.sku || '-'}</td>
-                            <td className="px-2 py-2 font-medium max-w-[120px] truncate" title={item.produto}>{item.produto}</td>
-                            <td className="px-2 py-2 text-gray-500">{item.ncm || '-'}</td>
-                            <td className="px-2 py-2 text-gray-500">{item.un || '-'}</td>
-                            <td className="px-2 py-2 text-right">{item.quantidade}</td>
-                            <td className="px-2 py-2 text-right">{item.valor_nf ? `R$ ${Number(item.valor_nf).toFixed(2)}` : '-'}</td>
-                            <td className="px-2 py-2 text-right">{item.ipi_pct ? `${item.ipi_pct}%` : '-'}</td>
-                            <td className="px-2 py-2 text-right text-green-700 font-medium">R$ {(Number(item.preco_unitario) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                            <td className="px-2 py-2 text-right font-medium">R$ {((Number(item.quantidade) || 0) * (Number(item.preco_unitario) || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                          </tr>
-                        ))}</tbody>
-                      </table>
+                    <div className="space-y-2">
+                      {viewingDetail.items.map((item, idx) => {
+                        const iStatus = item.item_status || 'pendente';
+                        const statusColors = { aprovado: 'bg-green-100 text-green-800', recusado: 'bg-red-100 text-red-800', pendente: 'bg-yellow-100 text-yellow-800' };
+                        return (
+                          <div key={idx} className={`border rounded-xl p-3 ${iStatus === 'recusado' ? 'border-red-200 bg-red-50/50' : iStatus === 'aprovado' ? 'border-green-200 bg-green-50/50' : 'border-gray-200'}`}>
+                            <div className="flex items-start justify-between mb-1">
+                              <div>
+                                <p className="font-medium text-sm">{item.sku || '-'} - {item.produto}</p>
+                                <p className="text-xs text-gray-500">NCM: {item.ncm || '-'} | UN: {item.un || '-'}</p>
+                              </div>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${statusColors[iStatus]}`}>
+                                {iStatus === 'aprovado' ? 'APROVADO' : iStatus === 'recusado' ? 'RECUSADO' : 'PENDENTE'}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-4 gap-2 text-xs mt-1">
+                              <div><span className="text-gray-400">Qtd:</span> <span className="font-medium">{item.quantidade}</span></div>
+                              <div><span className="text-gray-400">Val.NF:</span> <span className="font-medium">{item.valor_nf ? `R$ ${Number(item.valor_nf).toFixed(2)}` : '-'}</span></div>
+                              <div><span className="text-gray-400">IPI:</span> <span className="font-medium">{item.ipi_pct ? `${item.ipi_pct}%` : '-'}</span></div>
+                              <div><span className="text-gray-400">c/IPI:</span> <span className="font-medium text-green-700">R$ {(Number(item.preco_unitario) || 0).toFixed(2)}</span></div>
+                            </div>
+                            <div className="text-xs mt-1">
+                              <span className="text-gray-400">Subtotal:</span> <span className="font-bold" style={{ color: COLORS.purple }}>R$ {((Number(item.quantidade) || 0) * (Number(item.preco_unitario) || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                            </div>
+                            {iStatus === 'recusado' && (item.preco_next_sugerido || item.motivo_recusa) && (
+                              <div className="mt-2 pt-2 border-t border-red-200 text-xs">
+                                {item.preco_next_sugerido && <p><span className="text-red-600 font-medium">Preco Sugerido:</span> R$ {Number(item.preco_next_sugerido).toFixed(2)}</p>}
+                                {item.motivo_recusa && <p><span className="text-red-600 font-medium">Motivo:</span> {item.motivo_recusa}</p>}
+                              </div>
+                            )}
+                            {/* Logistics fields (Next) */}
+                            {(item.dim_produto || item.peso_liquido || item.dim_caixa_master || item.peso_caixa_master || item.unidades_por_caixa) && (
+                              <div className="mt-2 pt-2 border-t border-gray-200 text-xs grid grid-cols-2 gap-1">
+                                <p className="col-span-2 font-medium text-gray-500 mb-1">Dados Logistica (Next):</p>
+                                {item.dim_produto && <p><span className="text-gray-400">Dim. Produto:</span> {item.dim_produto}</p>}
+                                {item.peso_liquido && <p><span className="text-gray-400">Peso Liquido:</span> {item.peso_liquido} kg</p>}
+                                {item.dim_caixa_master && <p><span className="text-gray-400">Dim. Caixa Master:</span> {item.dim_caixa_master}</p>}
+                                {item.peso_caixa_master && <p><span className="text-gray-400">Peso Caixa Master:</span> {item.peso_caixa_master} kg</p>}
+                                {item.unidades_por_caixa && <p><span className="text-gray-400">Un/Caixa:</span> {item.unidades_por_caixa}</p>}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ) : (
