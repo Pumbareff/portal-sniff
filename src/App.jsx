@@ -2660,7 +2660,7 @@ const App = () => {
     const [sniffNewProduct, setSniffNewProduct] = useState({ nome: '', sku: '', ean: '', preco: 0, mlc: '' });
     const [sniffLastSync, setSniffLastSync] = useState(localStorage.getItem('sniff-padrao-last-sync') || null);
     const [sniffSelected, setSniffSelected] = useState(new Set());
-    const [topSellers, setTopSellers] = useState({ thisMonth: new Set(), lastMonth: new Set() });
+    const [topSellers, setTopSellers] = useState({ thisMonth: new Set(), last3Months: new Set() });
     const [topSellersLoading, setTopSellersLoading] = useState(false);
 
     const checkFields = ['titulo_seo', 'campo_modelo', 'marca', 'capa', 'clip', 'afiliados', 'pi', 'ads', 'full_check'];
@@ -2671,13 +2671,13 @@ const App = () => {
       // Fetch top sellers from orders endpoint
       setTopSellersLoading(true);
       const now = new Date();
-      const lastMonthStart = Math.floor(new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime() / 1000);
+      const threeMonthsAgo = Math.floor(new Date(now.getFullYear(), now.getMonth() - 3, 1).getTime() / 1000);
       const thisMonthStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
-      fetch(`/api/baselinker/orders?date_from=${lastMonthStart}`)
+      fetch(`/api/baselinker/orders?date_from=${threeMonthsAgo}`)
         .then(r => r.json())
         .then(data => {
           if (data.success && data.orders) {
-            const thisM = {}, lastM = {};
+            const thisM = {}, all3M = {};
             for (const order of data.orders) {
               const orderDate = new Date(order.date);
               const isThisMonth = orderDate.getTime() / 1000 >= thisMonthStart;
@@ -2685,12 +2685,12 @@ const App = () => {
                 const sku = (p.sku || '').trim();
                 if (!sku) continue;
                 const qty = parseInt(p.quantity) || 1;
-                const target = isThisMonth ? thisM : lastM;
-                target[sku] = (target[sku] || 0) + qty;
+                if (isThisMonth) thisM[sku] = (thisM[sku] || 0) + qty;
+                all3M[sku] = (all3M[sku] || 0) + qty;
               }
             }
             const top30 = (map) => Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 30).map(([sku]) => sku);
-            setTopSellers({ thisMonth: new Set(top30(thisM)), lastMonth: new Set(top30(lastM)) });
+            setTopSellers({ thisMonth: new Set(top30(thisM)), last3Months: new Set(top30(all3M)) });
           }
         })
         .catch(err => console.error('Top sellers error:', err))
@@ -2907,8 +2907,8 @@ const App = () => {
 
         {/* Star Legend */}
         <div className="flex items-center gap-4 text-xs text-gray-500">
-          <span className="flex items-center gap-1"><Star size={12} fill="currentColor" className="text-yellow-500" /> Top 30 mais vendidos este mes</span>
-          <span className="flex items-center gap-1"><Star size={12} fill="currentColor" className="text-gray-400" /> Top 30 mais vendidos mes passado</span>
+          <span className="flex items-center gap-1"><Star size={12} fill="currentColor" className="text-yellow-500" /> Top 30 mais vendidos (3 meses)</span>
+          <span className="flex items-center gap-1"><Star size={12} fill="currentColor" className="text-blue-500" /> Top 30 mais vendidos este mes</span>
           {topSellersLoading && <span className="text-purple-500 flex items-center gap-1"><RefreshCw size={12} className="animate-spin" /> Carregando ranking...</span>}
         </div>
 
@@ -2933,7 +2933,6 @@ const App = () => {
                     {filtered.length > 0 && filtered.every(p => sniffSelected.has(p.id)) && <CheckCircle size={12} />}
                   </button>
                 </th>
-                <th className="text-left p-3 text-xs font-bold text-gray-500 w-[50px]">Img</th>
                 <th className="text-left p-3 text-xs font-bold text-gray-500 min-w-[80px]">SKU</th>
                 <th className="text-left p-3 text-xs font-bold text-gray-500 min-w-[200px]">Produto</th>
                 <th className="text-right p-3 text-xs font-bold text-gray-500 min-w-[80px]">Preco</th>
@@ -2959,24 +2958,17 @@ const App = () => {
                         {sniffSelected.has(p.id) && <CheckCircle size={12} />}
                       </button>
                     </td>
-                    <td className="p-2">
-                      {p.imagem_url ? (
-                        <img src={p.imagem_url} alt="" className="w-10 h-10 rounded-lg object-cover border border-gray-200" />
-                      ) : (
-                        <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400"><Package size={16} /></div>
-                      )}
-                    </td>
                     <td className="p-3">
                       <p className="text-xs font-mono font-bold text-gray-700">{p.sku || '-'}</p>
                     </td>
                     <td className="p-3">
                       <div className="flex items-center gap-1.5">
                         <p className="font-bold text-gray-800 text-xs">{p.nome}</p>
-                        {p.sku && topSellers.thisMonth.has(p.sku) && (
-                          <span title="Top 30 este mes" className="text-yellow-500 flex-shrink-0"><Star size={14} fill="currentColor" /></span>
+                        {p.sku && topSellers.last3Months.has(p.sku) && (
+                          <span title="Top 30 (3 meses)" className="text-yellow-500 flex-shrink-0"><Star size={14} fill="currentColor" /></span>
                         )}
-                        {p.sku && !topSellers.thisMonth.has(p.sku) && topSellers.lastMonth.has(p.sku) && (
-                          <span title="Top 30 mes passado" className="text-gray-400 flex-shrink-0"><Star size={14} fill="currentColor" /></span>
+                        {p.sku && topSellers.thisMonth.has(p.sku) && (
+                          <span title="Top 30 este mes" className="text-blue-500 flex-shrink-0"><Star size={14} fill="currentColor" /></span>
                         )}
                       </div>
                       {p.mlc && <p className="text-[10px] text-gray-400">{p.mlc}</p>}
@@ -3016,7 +3008,7 @@ const App = () => {
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={checkLabels.length + 8} className="text-center py-12 text-gray-400">
+                <tr><td colSpan={checkLabels.length + 7} className="text-center py-12 text-gray-400">
                   {sniffSearch ? 'Nenhum produto encontrado para essa busca' : 'Nenhum produto cadastrado. Clique em "Sincronizar BaseLinker" para importar.'}
                 </td></tr>
               )}
