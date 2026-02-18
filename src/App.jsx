@@ -2667,16 +2667,29 @@ const App = () => {
 
     useEffect(() => {
       supabase.from('am_produtos').select('*').order('nome', { ascending: true }).then(({ data }) => setSniffProdutos(data || []));
-      // Fetch top sellers
+      // Fetch top sellers from orders endpoint
       setTopSellersLoading(true);
-      fetch('/api/baselinker/top-sellers')
+      const now = new Date();
+      const lastMonthStart = Math.floor(new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime() / 1000);
+      const thisMonthStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
+      fetch(`/api/baselinker/orders?date_from=${lastMonthStart}`)
         .then(r => r.json())
         .then(data => {
-          if (data.success) {
-            setTopSellers({
-              thisMonth: new Set(data.thisMonthSkus || []),
-              lastMonth: new Set(data.lastMonthSkus || []),
-            });
+          if (data.success && data.orders) {
+            const thisM = {}, lastM = {};
+            for (const order of data.orders) {
+              const orderDate = new Date(order.date);
+              const isThisMonth = orderDate.getTime() / 1000 >= thisMonthStart;
+              for (const p of (order.products || [])) {
+                const sku = (p.sku || '').trim();
+                if (!sku) continue;
+                const qty = parseInt(p.quantity) || 1;
+                const target = isThisMonth ? thisM : lastM;
+                target[sku] = (target[sku] || 0) + qty;
+              }
+            }
+            const top30 = (map) => Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 30).map(([sku]) => sku);
+            setTopSellers({ thisMonth: new Set(top30(thisM)), lastMonth: new Set(top30(lastM)) });
           }
         })
         .catch(err => console.error('Top sellers error:', err))
