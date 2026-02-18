@@ -4339,41 +4339,52 @@ const App = () => {
       return { type: 'simple', label: 'Simples', baseSku: sku, mult: null };
     };
 
-    // Fetch ALL products
-    const fetchAllProducts = async () => {
-      setLoading(true);
-      setProducts([]);
-      let all = [];
-      let page = 1;
-      let hasMore = true;
-
-      while (hasMore) {
-        setLoadProgress({ page, count: all.length });
+    // Fetch ALL products (single call - API handles internal pagination)
+    const fetchAllProducts = async (useCache = true) => {
+      // Try localStorage cache first
+      if (useCache) {
         try {
-          const res = await fetch('/api/baselinker/products?page=' + page);
-          const data = await res.json();
-          if (data.success && data.products && data.products.length > 0) {
-            all = all.concat(data.products);
-            page++;
-          } else {
-            hasMore = false;
+          const cached = localStorage.getItem('portal-sniff-precificacao-products');
+          if (cached) {
+            const { data, timestamp } = JSON.parse(cached);
+            const ageMinutes = (Date.now() - timestamp) / 60000;
+            if (data && data.length > 0 && ageMinutes < 120) {
+              const allSkus = data.map(p => p.sku).filter(Boolean);
+              const processed = data
+                .map(p => ({ ...p, productType: parseProductType(p.sku, allSkus), isCustom: false }))
+                .filter(p => p.productType.type !== 'simple_with_kits');
+              setProducts(processed);
+              setLoadProgress({ page: 0, count: data.length, cached: true, ageMinutes: Math.round(ageMinutes) });
+              return;
+            }
           }
-        } catch (err) {
-          console.error('Fetch error page', page, err);
-          hasMore = false;
-        }
+        } catch {}
       }
 
-      const allSkus = all.map(p => p.sku).filter(Boolean);
-      const processed = all
-        .map(p => ({ ...p, productType: parseProductType(p.sku, allSkus), isCustom: false }))
-        .filter(p => p.productType.type !== 'simple_with_kits');
+      setLoading(true);
+      setProducts([]);
+      setLoadProgress({ page: 1, count: 0 });
 
-      setProducts(processed);
+      try {
+        const res = await fetch('/api/baselinker/products');
+        const data = await res.json();
+        if (data.success && data.products) {
+          const allSkus = data.products.map(p => p.sku).filter(Boolean);
+          const processed = data.products
+            .map(p => ({ ...p, productType: parseProductType(p.sku, allSkus), isCustom: false }))
+            .filter(p => p.productType.type !== 'simple_with_kits');
+          setProducts(processed);
+          setLoadProgress({ page: data.pages_fetched || 1, count: data.products.length });
+          localStorage.setItem('portal-sniff-precificacao-products', JSON.stringify({ data: data.products, timestamp: Date.now() }));
+        }
+      } catch (err) {
+        console.error('Fetch error:', err);
+      }
       setLoading(false);
     };
 
-    // No auto-fetch - only when user clicks "Atualizar"
+    // Auto-load from cache on mount
+    useEffect(() => { fetchAllProducts(true); }, []);
 
     // All products including custom ones
     const allProducts = useMemo(() => {
@@ -4532,9 +4543,10 @@ const App = () => {
                 <button onClick={exportCSV} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-bold flex items-center gap-2 transition-all">
                   <Download size={16} /> CSV
                 </button>
-                <button onClick={fetchAllProducts} disabled={loading} className="px-4 py-2 bg-[#F4B942] hover:bg-[#e5aa33] text-gray-900 rounded-xl text-sm font-black flex items-center gap-2 transition-all disabled:opacity-50">
+                <button onClick={() => fetchAllProducts(false)} disabled={loading} className="px-4 py-2 bg-[#F4B942] hover:bg-[#e5aa33] text-gray-900 rounded-xl text-sm font-black flex items-center gap-2 transition-all disabled:opacity-50">
                   <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> {loading ? 'Carregando...' : 'Atualizar'}
                 </button>
+                {loadProgress.cached && <span className="text-xs text-gray-400">Cache: {loadProgress.ageMinutes}min atras</span>}
               </div>
             </div>
 
