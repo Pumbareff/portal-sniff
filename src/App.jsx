@@ -2746,37 +2746,19 @@ const App = () => {
         const allProducts = data.products || [];
         setSniffSyncProgress(`${allProducts.length} produtos encontrados (${data.pages_fetched} paginas). Salvando...`);
 
-        setSniffSyncProgress(`Sincronizando ${allProducts.length} produtos...`);
-        let updated = 0, inserted = 0;
-
-        // Upsert in batches of 50 for speed
-        const batchSize = 50;
-        for (let i = 0; i < allProducts.length; i += batchSize) {
-          setSniffSyncProgress(`Salvando ${i}/${allProducts.length} produtos...`);
-          const batch = allProducts.slice(i, i + batchSize);
-          const rows = batch.filter(p => p.sku || p.name).map(p => ({
-            sku: p.sku || '',
-            nome: p.name || '',
-            ean: p.ean || '',
-            preco: parseFloat(p.price1) || 0,
-            estoque: parseInt(p.stock) || 0,
-            baselinker_id: String(p.id || ''),
-            peso: parseFloat(p.weight) || 0,
-            is_kit: /KIT\d*/i.test(p.sku || ''),
-          }));
-          // Split: products with SKU get upserted, products without SKU get inserted
-          const withSku = rows.filter(r => r.sku);
-          const noSku = rows.filter(r => !r.sku);
-          if (withSku.length > 0) {
-            const { error } = await supabase.from('am_produtos').upsert(withSku, { onConflict: 'sku', ignoreDuplicates: false });
-            if (error) console.error('Upsert error:', error);
-            updated += withSku.length;
-          }
-          if (noSku.length > 0) {
-            await supabase.from('am_produtos').insert(noSku);
-            inserted += noSku.length;
-          }
-        }
+        setSniffSyncProgress(`Salvando ${allProducts.length} produtos no banco...`);
+        const rows = allProducts.filter(p => p.sku).map(p => ({
+          sku: p.sku,
+          nome: p.name || '',
+          ean: p.ean || '',
+          preco: parseFloat(p.price1) || 0,
+          estoque: parseInt(p.stock) || 0,
+          baselinker_id: String(p.id || ''),
+          peso: parseFloat(p.weight) || 0,
+          is_kit: /KIT\d*/i.test(p.sku || ''),
+        }));
+        const { error } = await supabase.from('am_produtos').upsert(rows, { onConflict: 'sku', ignoreDuplicates: false });
+        if (error) console.error('Upsert error:', error);
 
         const { data: refreshed } = await supabase.from('am_produtos').select('*').order('nome', { ascending: true });
         setSniffProdutos(refreshed || []);
@@ -2787,7 +2769,7 @@ const App = () => {
         setSniffLastSync(now);
 
         setSniffSyncProgress('');
-        alert(`Sync concluido! ${inserted} novos, ${updated} atualizados. Total: ${allProducts.length} produtos.`);
+        alert(`Sync concluido! ${allProducts.length} produtos sincronizados.`);
       } catch (err) {
         console.error('Sync error:', err);
         alert('Erro ao sincronizar: ' + err.message);
