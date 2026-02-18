@@ -2725,27 +2725,32 @@ const App = () => {
         setSniffSyncProgress(`Sincronizando ${allProducts.length} produtos...`);
         let updated = 0, inserted = 0;
 
-        for (const p of allProducts) {
-          if (!p.sku && !p.name) continue;
-          const prodData = {
+        // Upsert in batches of 50 for speed
+        const batchSize = 50;
+        for (let i = 0; i < allProducts.length; i += batchSize) {
+          setSniffSyncProgress(`Salvando ${i}/${allProducts.length} produtos...`);
+          const batch = allProducts.slice(i, i + batchSize);
+          const rows = batch.filter(p => p.sku || p.name).map(p => ({
             sku: p.sku || '',
             nome: p.name || '',
             ean: p.ean || '',
             preco: parseFloat(p.price1) || 0,
             estoque: parseInt(p.stock) || 0,
-            imagem_url: (p.images && p.images[0]) || null,
             baselinker_id: String(p.id || ''),
             peso: parseFloat(p.weight) || 0,
             is_kit: /KIT\d*/i.test(p.sku || ''),
-          };
-
-          const { data: existing } = await supabase.from('am_produtos').select('id').eq('sku', prodData.sku).single();
-          if (existing) {
-            await supabase.from('am_produtos').update(prodData).eq('id', existing.id);
-            updated++;
-          } else {
-            await supabase.from('am_produtos').insert([prodData]);
-            inserted++;
+          }));
+          // Split: products with SKU get upserted, products without SKU get inserted
+          const withSku = rows.filter(r => r.sku);
+          const noSku = rows.filter(r => !r.sku);
+          if (withSku.length > 0) {
+            const { error } = await supabase.from('am_produtos').upsert(withSku, { onConflict: 'sku', ignoreDuplicates: false });
+            if (error) console.error('Upsert error:', error);
+            updated += withSku.length;
+          }
+          if (noSku.length > 0) {
+            await supabase.from('am_produtos').insert(noSku);
+            inserted += noSku.length;
           }
         }
 
