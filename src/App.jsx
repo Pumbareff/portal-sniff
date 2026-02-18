@@ -2658,6 +2658,7 @@ const App = () => {
     const [sniffShowAdd, setSniffShowAdd] = useState(false);
     const [sniffNewProduct, setSniffNewProduct] = useState({ nome: '', sku: '', ean: '', preco: 0, mlc: '' });
     const [sniffLastSync, setSniffLastSync] = useState(localStorage.getItem('sniff-padrao-last-sync') || null);
+    const [sniffSelected, setSniffSelected] = useState(new Set());
 
     const checkFields = ['titulo_seo', 'campo_modelo', 'marca', 'capa', 'clip', 'afiliados', 'pi', 'ads', 'full_check'];
     const checkLabels = ['Titulo SEO', 'Modelo', 'Marca', 'Capa', 'Clip', 'Afiliados', 'PI', 'Ads', 'FULL'];
@@ -2741,6 +2742,36 @@ const App = () => {
       await supabase.from('am_produtos').delete().eq('id', id);
       setSniffProdutos(prev => prev.filter(p => p.id !== id));
       setAmProdutos(prev => prev.filter(p => p.id !== id));
+      setSniffSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
+    };
+
+    const toggleSniffSelect = (id) => {
+      setSniffSelected(prev => {
+        const n = new Set(prev);
+        if (n.has(id)) n.delete(id); else n.add(id);
+        return n;
+      });
+    };
+
+    const toggleSniffSelectAll = (filteredIds) => {
+      setSniffSelected(prev => {
+        const allSelected = filteredIds.every(id => prev.has(id));
+        if (allSelected) return new Set();
+        return new Set(filteredIds);
+      });
+    };
+
+    const handleSniffBulkDelete = async () => {
+      const count = sniffSelected.size;
+      if (count === 0) return;
+      if (!window.confirm(`Excluir ${count} produto${count > 1 ? 's' : ''} selecionado${count > 1 ? 's' : ''}?`)) return;
+      const ids = [...sniffSelected];
+      for (const id of ids) {
+        await supabase.from('am_produtos').delete().eq('id', id);
+      }
+      setSniffProdutos(prev => prev.filter(p => !sniffSelected.has(p.id)));
+      setAmProdutos(prev => prev.filter(p => !sniffSelected.has(p.id)));
+      setSniffSelected(new Set());
     };
 
     const handleSniffEdit = (product) => {
@@ -2856,6 +2887,11 @@ const App = () => {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="p-3 w-[40px]">
+                  <button onClick={() => toggleSniffSelectAll(filtered.map(p => p.id))} className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${filtered.length > 0 && filtered.every(p => sniffSelected.has(p.id)) ? 'bg-[#6B1B8E] border-[#6B1B8E] text-white' : 'border-gray-300 hover:border-[#6B1B8E]'}`}>
+                    {filtered.length > 0 && filtered.every(p => sniffSelected.has(p.id)) && <CheckCircle size={12} />}
+                  </button>
+                </th>
                 <th className="text-left p-3 text-xs font-bold text-gray-500 w-[50px]">Img</th>
                 <th className="text-left p-3 text-xs font-bold text-gray-500 min-w-[80px]">SKU</th>
                 <th className="text-left p-3 text-xs font-bold text-gray-500 min-w-[200px]">Produto</th>
@@ -2872,7 +2908,12 @@ const App = () => {
                 const score = checkFields.reduce((s, f) => s + (p[f] ? 1 : 0), 0);
                 const rowColor = score === 9 ? 'bg-green-50' : score >= 5 ? 'bg-yellow-50' : 'bg-red-50';
                 return (
-                  <tr key={p.id} className={`border-b border-gray-50 ${rowColor} hover:brightness-95 transition-all`}>
+                  <tr key={p.id} className={`border-b border-gray-50 ${rowColor} hover:brightness-95 transition-all ${sniffSelected.has(p.id) ? 'ring-1 ring-inset ring-[#6B1B8E]/30' : ''}`}>
+                    <td className="p-3">
+                      <button onClick={() => toggleSniffSelect(p.id)} className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${sniffSelected.has(p.id) ? 'bg-[#6B1B8E] border-[#6B1B8E] text-white' : 'border-gray-300 hover:border-[#6B1B8E]'}`}>
+                        {sniffSelected.has(p.id) && <CheckCircle size={12} />}
+                      </button>
+                    </td>
                     <td className="p-2">
                       {p.imagem_url ? (
                         <img src={p.imagem_url} alt="" className="w-10 h-10 rounded-lg object-cover border border-gray-200" />
@@ -2922,13 +2963,24 @@ const App = () => {
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={checkLabels.length + 7} className="text-center py-12 text-gray-400">
+                <tr><td colSpan={checkLabels.length + 8} className="text-center py-12 text-gray-400">
                   {sniffSearch ? 'Nenhum produto encontrado para essa busca' : 'Nenhum produto cadastrado. Clique em "Sincronizar BaseLinker" para importar.'}
                 </td></tr>
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Bulk Action Bar */}
+        {sniffSelected.size > 0 && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-[#1a0a2e] text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-4 animate-fadeIn">
+            <span className="text-sm font-bold">{sniffSelected.size} selecionado{sniffSelected.size > 1 ? 's' : ''}</span>
+            <button onClick={() => setSniffSelected(new Set())} className="text-xs text-purple-300 hover:text-white transition-all">Limpar</button>
+            <button onClick={handleSniffBulkDelete} className="flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white px-4 py-1.5 rounded-xl text-sm font-bold transition-all">
+              <Trash2 size={14} /> Excluir {sniffSelected.size}
+            </button>
+          </div>
+        )}
 
         {/* Edit Modal */}
         {sniffEditProduct && (
