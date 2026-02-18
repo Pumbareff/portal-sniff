@@ -2706,21 +2706,13 @@ const App = () => {
 
     const syncBaseLinkerSniff = async () => {
       setSniffSyncing(true);
-      setSniffSyncProgress('Buscando produtos do BaseLinker...');
+      setSniffSyncProgress('Buscando TODOS os produtos do BaseLinker...');
       try {
-        let allProducts = [];
-        let page = 1;
-        let hasMore = true;
-
-        while (hasMore) {
-          setSniffSyncProgress(`Buscando pagina ${page}...`);
-          const res = await fetch(`/api/baselinker/products?page=${page}`);
-          const data = await res.json();
-          if (!data.success) throw new Error(data.error || 'Erro ao buscar produtos');
-          allProducts = [...allProducts, ...(data.products || [])];
-          hasMore = (data.products || []).length >= 100;
-          page++;
-        }
+        const res = await fetch('/api/baselinker/products');
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Erro ao buscar produtos');
+        const allProducts = data.products || [];
+        setSniffSyncProgress(`${allProducts.length} produtos encontrados (${data.pages_fetched} paginas). Salvando...`);
 
         setSniffSyncProgress(`Sincronizando ${allProducts.length} produtos...`);
         let updated = 0, inserted = 0;
