@@ -307,10 +307,15 @@ const App = () => {
   });
   const [amSubTab, setAmSubTab] = useState('dashboard-am');
 
-  // Persist active tab
+  // Persist active tab + fornecedor auto-redirect
   useEffect(() => {
     localStorage.setItem('portal-sniff-tab', activeTab);
   }, [activeTab]);
+  useEffect(() => {
+    if (profile?.role === 'fornecedor' && activeTab !== 'pedidos') {
+      setActiveTab('pedidos');
+    }
+  }, [profile]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // States para Academy
@@ -549,6 +554,9 @@ const App = () => {
   const AdminPanel = () => {
     const [showCreateUser, setShowCreateUser] = useState(false);
     const [newUserData, setNewUserData] = useState({ email: '', password: '', full_name: '' });
+    const [showCreateSupplier, setShowCreateSupplier] = useState(false);
+    const [newSupplierData, setNewSupplierData] = useState({ email: '', password: '', fornecedor_nome: '', contato_nome: '', telefone_whatsapp: '' });
+    const [createSupplierMsg, setCreateSupplierMsg] = useState('');
     const [createUserMsg, setCreateUserMsg] = useState('');
     const [showEditUserModal, setShowEditUserModal] = useState(false);
     const [editUserData, setEditUserData] = useState({ id: '', email: '', password: '', full_name: '' });
@@ -590,6 +598,47 @@ const App = () => {
         setTimeout(() => { setShowCreateUser(false); setCreateUserMsg(''); }, 1500);
       } catch (err) {
         setCreateUserMsg('Erro inesperado: ' + err.message);
+      }
+    };
+
+    const handleCreateSupplier = async () => {
+      setCreateSupplierMsg('');
+      if (!newSupplierData.email || !newSupplierData.password || !newSupplierData.fornecedor_nome) {
+        setCreateSupplierMsg('Email, senha e nome da empresa sao obrigatorios');
+        return;
+      }
+      try {
+        const response = await fetch('/api/admin-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: newSupplierData.email,
+            password: newSupplierData.password,
+            full_name: newSupplierData.contato_nome || newSupplierData.fornecedor_nome,
+            admin_id: user.id
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          setCreateSupplierMsg('Erro: ' + (result.error || 'Falha ao criar'));
+          return;
+        }
+        // Update profile with fornecedor data
+        if (result.user?.id) {
+          await supabase.from('profiles').update({
+            role: 'fornecedor',
+            fornecedor_nome: newSupplierData.fornecedor_nome,
+            telefone_whatsapp: newSupplierData.telefone_whatsapp || null,
+            permissions: { pedidos: true }
+          }).eq('id', result.user.id);
+        }
+        setCreateSupplierMsg('Fornecedor criado com sucesso!');
+        setNewSupplierData({ email: '', password: '', fornecedor_nome: '', contato_nome: '', telefone_whatsapp: '' });
+        const { data: profiles } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+        if (profiles) setAllProfiles(profiles);
+        setTimeout(() => { setShowCreateSupplier(false); setCreateSupplierMsg(''); }, 1500);
+      } catch (err) {
+        setCreateSupplierMsg('Erro: ' + err.message);
       }
     };
 
@@ -735,6 +784,12 @@ const App = () => {
             >
               <UserPlus size={16} /> Criar Funcionario
             </button>
+            <button
+              onClick={() => { setShowCreateSupplier(true); setCreateSupplierMsg(''); }}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold text-sm hover:bg-emerald-700 transition-colors"
+            >
+              <Truck size={16} /> Cadastrar Fornecedor
+            </button>
             <div className="px-4 py-2 bg-red-100 text-red-700 rounded-lg font-bold text-sm">
               Acesso Admin
             </div>
@@ -778,6 +833,65 @@ const App = () => {
                   <button onClick={handleCreateUser}
                     className="flex-1 px-4 py-2 bg-[#6B1B8E] text-white rounded-xl font-bold text-sm hover:bg-[#5a1676]">
                     Criar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Create Supplier Modal */}
+        {showCreateSupplier && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowCreateSupplier(false)}>
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+              <h3 className="text-lg font-bold text-emerald-700 mb-4"><Truck size={20} className="inline mr-2" />Cadastrar Fornecedor</h3>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nome Empresa (igual ao pedido) *</label>
+                  <input type="text" value={newSupplierData.fornecedor_nome} onChange={e => setNewSupplierData({ ...newSupplierData, fornecedor_nome: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-500 outline-none"
+                    placeholder="Ex: NEXT TRADE" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nome Contato</label>
+                  <input type="text" value={newSupplierData.contato_nome} onChange={e => setNewSupplierData({ ...newSupplierData, contato_nome: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-500 outline-none"
+                    placeholder="Nome da pessoa de contato" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Email *</label>
+                  <input type="email" value={newSupplierData.email} onChange={e => setNewSupplierData({ ...newSupplierData, email: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-500 outline-none"
+                    placeholder="email@fornecedor.com" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Senha *</label>
+                  <input type="password" value={newSupplierData.password} onChange={e => setNewSupplierData({ ...newSupplierData, password: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-500 outline-none"
+                    placeholder="Minimo 6 caracteres" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">WhatsApp</label>
+                  <input type="text" value={newSupplierData.telefone_whatsapp} onChange={e => setNewSupplierData({ ...newSupplierData, telefone_whatsapp: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-200 focus:border-emerald-500 outline-none"
+                    placeholder="5511999999999" />
+                </div>
+                {createSupplierMsg && (
+                  <p className={`text-sm font-bold ${createSupplierMsg.includes('sucesso') ? 'text-green-600' : 'text-red-600'}`}>
+                    {createSupplierMsg}
+                  </p>
+                )}
+                <div className="bg-amber-50 rounded-lg p-2 text-xs text-amber-700">
+                  <strong>Importante:</strong> O nome da empresa deve ser IDENTICO ao usado nos pedidos (ex: "NEXT TRADE").
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <button onClick={() => setShowCreateSupplier(false)}
+                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-xl font-bold text-sm hover:bg-gray-300">
+                    Cancelar
+                  </button>
+                  <button onClick={handleCreateSupplier}
+                    className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700">
+                    Cadastrar
                   </button>
                 </div>
               </div>
@@ -1027,6 +1141,7 @@ const App = () => {
     const canSee = (item) => {
       if (profile?.role === 'admin') return true;
       if (item.id === 'admin') return false;
+      if (profile?.role === 'fornecedor') return item.id === 'pedidos';
       return profile?.permissions?.[item.permission] === true;
     };
 
@@ -3569,6 +3684,8 @@ const App = () => {
     const [dbReady, setDbReady] = useState(true);
     const [workflowModal, setWorkflowModal] = useState(null);
     const [wfData, setWfData] = useState({});
+    const isFornecedor = profile?.role === 'fornecedor';
+    const canManage = profile?.role === 'admin' || profile?.role === 'approved';
 
     // Load pedidos from Supabase
     useEffect(() => {
@@ -3578,7 +3695,12 @@ const App = () => {
             .from('pedidos_fornecedor')
             .select('*')
             .order('created_at', { ascending: false });
-          if (data) { setPedidos(data); setDbReady(true); }
+          if (data) {
+            const filtered = profile?.role === 'fornecedor' && profile?.fornecedor_nome
+              ? data.filter(p => p.fornecedor?.toLowerCase() === profile.fornecedor_nome.toLowerCase())
+              : data;
+            setPedidos(filtered); setDbReady(true);
+          }
           if (error) {
             console.warn('Pedidos table error:', error.message);
             setDbReady(false);
@@ -3677,7 +3799,7 @@ const App = () => {
       setWfData({});
     };
 
-    const handleNextResponse = async (pedido, itemDecisions, pedidoNextRef) => {
+    const handleNextResponse = async (pedido, itemDecisions, pedidoNextRef, pdfUrl) => {
       const now = new Date().toISOString();
       const updatedItems = (pedido.items || []).map((item, idx) => {
         const dec = itemDecisions[idx] || {};
@@ -3686,16 +3808,40 @@ const App = () => {
           item_status: dec.status || 'aprovado',
           preco_next_sugerido: dec.status === 'recusado' ? (Number(dec.preco_sugerido) || null) : null,
           motivo_recusa: dec.status === 'recusado' ? (dec.motivo || null) : null,
+          dim_produto: dec.dim_produto || item.dim_produto || '',
+          peso_liquido: dec.peso_liquido || item.peso_liquido || '',
+          dim_caixa_master: dec.dim_caixa_master || item.dim_caixa_master || '',
+          peso_caixa_master: dec.peso_caixa_master || item.peso_caixa_master || '',
+          unidades_por_caixa: dec.unidades_por_caixa || item.unidades_por_caixa || '',
         };
       });
       const allApproved = updatedItems.every(i => i.item_status === 'aprovado');
       const newStatus = allApproved ? 'aprovado' : 'preco_recusado';
-      const updates = { items: updatedItems, status: newStatus, pedido_next_ref: pedidoNextRef || null };
+      const updates = { items: updatedItems, status: newStatus, pedido_next_ref: pedidoNextRef || null, pedido_next_pdf_url: pdfUrl || null };
       if (newStatus === 'aprovado') updates.aprovado_at = now;
       try { await supabase.from('pedidos_fornecedor').update(updates).eq('id', pedido.id); } catch (e) { console.warn(e); }
       setPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, ...updates } : p));
       setWorkflowModal(null);
       setWfData({});
+    };
+
+    const handlePedidoPdfUpload = async (file, pedidoId) => {
+      if (!file) return null;
+      const ext = file.name.split('.').pop();
+      const fileName = `pedido_${pedidoId}_${Date.now()}.${ext}`;
+      try {
+        const { error: uploadError } = await supabase.storage.from('pedidos-fornecedor').upload(fileName, file, { contentType: file.type, upsert: true });
+        if (uploadError) {
+          // Bucket may not exist - try to create it
+          if (uploadError.message?.includes('not found') || uploadError.statusCode === '404') {
+            console.warn('Bucket pedidos-fornecedor nao existe. Crie via Supabase Dashboard > Storage.');
+          }
+          console.error('Upload error:', uploadError);
+          return null;
+        }
+        const { data: urlData } = supabase.storage.from('pedidos-fornecedor').getPublicUrl(fileName);
+        return urlData?.publicUrl || null;
+      } catch (e) { console.error('PDF upload failed:', e); return null; }
     };
 
     const isOverdue = (p) => {
@@ -3720,6 +3866,49 @@ const App = () => {
         await supabase.from('pedidos_fornecedor').delete().eq('id', pedido.id);
       } catch {}
       setPedidos(prev => prev.filter(p => p.id !== pedido.id));
+    };
+
+    const handleDuplicarPedido = async (pedido) => {
+      const newItems = (pedido.items || []).map(i => ({
+        ...i, item_status: 'pendente', preco_next_sugerido: null, motivo_recusa: null
+      }));
+      const totals = calcTotals(newItems);
+      const newPedido = {
+        numero_oc: generateOC(),
+        fornecedor: pedido.fornecedor,
+        items: newItems,
+        produto: pedido.produto,
+        quantidade: totals.quantidade_total,
+        valor_total: totals.valor_total,
+        peso_total: totals.peso_total,
+        prazo_entrega: '',
+        observacoes: pedido.observacoes ? `Duplicado de ${pedido.numero_oc}` : '',
+        status: 'pendente',
+        created_at: new Date().toISOString(),
+      };
+      try {
+        const { data, error } = await supabase.from('pedidos_fornecedor').insert([newPedido]).select();
+        if (data?.[0]) setPedidos(prev => [data[0], ...prev]);
+        else if (error) alert('Erro: ' + error.message);
+      } catch (e) { console.error(e); }
+    };
+
+    const handleExportExcel = () => {
+      const rows = filteredPedidos.map(p => ({
+        'Numero OC': p.numero_oc,
+        'Fornecedor': p.fornecedor,
+        'Produtos': p.items?.map(i => i.sku || i.produto).join(', ') || p.produto,
+        'Qtd Total': p.quantidade || p.items?.reduce((s, i) => s + (Number(i.quantidade) || 0), 0) || 0,
+        'Valor Total': p.valor_total || 0,
+        'Status': statusConfig[p.status]?.label || p.status,
+        'Prazo Entrega': p.prazo_entrega || '',
+        'Data Criacao': p.created_at ? new Date(p.created_at).toLocaleDateString('pt-BR') : '',
+        'Pedido Next': p.pedido_next_ref || '',
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Pedidos');
+      XLSX.writeFile(wb, `pedidos_fornecedor_${new Date().toISOString().slice(0, 10)}.xlsx`);
     };
 
     const handleDownloadPDF = (pedido) => {
@@ -3830,9 +4019,15 @@ const App = () => {
             <h1 className="text-2xl font-bold text-gray-800">Pedidos Fornecedor</h1>
             <p className="text-gray-500">Gestao de ordens de compra e cotacoes</p>
           </div>
-          <button onClick={() => setShowForm(true)} className="flex items-center gap-2 px-4 py-2 text-white rounded-xl" style={{ backgroundColor: COLORS.purple }}>
-            <Plus size={18} /> Nova Ordem
-          </button>
+          <div className="flex gap-2">
+            {canManage && <button onClick={handleExportExcel} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-100" title="Exportar pedidos filtrados">
+              <Download size={16} /> Exportar
+            </button>}
+            {canManage && <button onClick={() => setShowForm(true)} className="flex items-center gap-2 px-4 py-2 text-white rounded-xl" style={{ backgroundColor: COLORS.purple }}>
+              <Plus size={18} /> Nova Ordem
+            </button>}
+            {isFornecedor && <span className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 font-medium text-sm"><Truck size={16} /> {profile.fornecedor_nome || 'Fornecedor'}</span>}
+          </div>
         </div>
 
         {/* DB Warning */}
@@ -3918,26 +4113,26 @@ const App = () => {
                     <td className="px-4 py-3 text-gray-500 text-sm">{p.created_at ? new Date(p.created_at).toLocaleDateString('pt-BR') : '-'}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1 flex-wrap">
-                        {p.status === 'pendente' && (
+                        {canManage && p.status === 'pendente' && (
                           <button onClick={() => advanceStatus(p, 'enviado_next')} className="px-2 py-1 rounded-lg text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100" title="Marcar como enviado para Next"><Send size={13} className="inline mr-1" />Enviar Next</button>
                         )}
                         {p.status === 'enviado_next' && (
                           <>
                             <button onClick={() => {
-                              const initDec = (p.items || []).map(item => ({ status: item.item_status === 'recusado' ? 'recusado' : 'aprovado', preco_sugerido: item.preco_next_sugerido || '', motivo: item.motivo_recusa || '' }));
+                              const initDec = (p.items || []).map(item => ({ status: item.item_status === 'recusado' ? 'recusado' : 'aprovado', preco_sugerido: item.preco_next_sugerido || '', motivo: item.motivo_recusa || '', dim_produto: item.dim_produto || '', peso_liquido: item.peso_liquido || '', dim_caixa_master: item.dim_caixa_master || '', peso_caixa_master: item.peso_caixa_master || '', unidades_por_caixa: item.unidades_por_caixa || '' }));
                               setWorkflowModal({ type: 'respond_items', pedido: p });
                               setWfData({ pedido_next_ref: p.pedido_next_ref || '', itemDecisions: initDec });
                             }} className="px-2 py-1 rounded-lg text-xs font-bold text-green-700 bg-green-50 hover:bg-green-100" title="Registrar resposta da Next por SKU"><CheckCircle size={13} className="inline mr-1" />Responder Next</button>
-                            <button onClick={() => advanceStatus(p, 'pendente', { enviado_next_at: null })} className="px-2 py-1 rounded-lg text-xs font-bold text-gray-500 bg-gray-50 hover:bg-gray-200" title="Desfazer - voltar para pendente"><Clock size={13} className="inline mr-1" />Desfazer</button>
+                            {canManage && <button onClick={() => advanceStatus(p, 'pendente', { enviado_next_at: null })} className="px-2 py-1 rounded-lg text-xs font-bold text-gray-500 bg-gray-50 hover:bg-gray-200" title="Desfazer - voltar para pendente"><Clock size={13} className="inline mr-1" />Desfazer</button>}
                           </>
                         )}
-                        {p.status === 'aprovado' && (
+                        {canManage && p.status === 'aprovado' && (
                           <button onClick={() => advanceStatus(p, 'ok_faturar')} className="px-2 py-1 rounded-lg text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100" title="Dar OK para Next faturar"><CheckCircle size={13} className="inline mr-1" />OK Faturar</button>
                         )}
-                        {p.status === 'ok_faturar' && (
+                        {canManage && p.status === 'ok_faturar' && (
                           <button onClick={() => { setWorkflowModal({ type: 'faturar', pedido: p }); setWfData({}); }} className="px-2 py-1 rounded-lg text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100" title="Marcar como faturado"><Package size={13} className="inline mr-1" />Faturado</button>
                         )}
-                        {p.status === 'preco_recusado' && (
+                        {canManage && p.status === 'preco_recusado' && (
                           <>
                             <button onClick={() => {
                               const resetItems = (p.items || []).map(i => i.item_status === 'recusado' ? { ...i, item_status: 'pendente', preco_next_sugerido: null, motivo_recusa: null } : i);
@@ -3946,9 +4141,10 @@ const App = () => {
                             <button onClick={() => { setWorkflowModal({ type: 'cancel', pedido: p }); setWfData({ motivo_cancelamento: '' }); }} className="px-2 py-1 rounded-lg text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200" title="Cancelar pedido"><XCircle size={13} className="inline mr-1" />Cancelar</button>
                           </>
                         )}
-                        {!['faturado', 'cancelado'].includes(p.status) && p.status !== 'preco_recusado' && (
+                        {canManage && !['faturado', 'cancelado'].includes(p.status) && p.status !== 'preco_recusado' && (
                           <button onClick={() => { setWorkflowModal({ type: 'cancel', pedido: p }); setWfData({ motivo_cancelamento: '' }); }} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50" title="Cancelar"><XCircle size={13} /></button>
                         )}
+                        {canManage && <button onClick={() => handleDuplicarPedido(p)} className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50" title="Duplicar Ordem"><ClipboardList size={13} /></button>}
                         <button onClick={() => handleDownloadPDF(p)} className="p-1.5 rounded-lg text-purple-600 hover:bg-purple-50" title="Baixar PDF"><Download size={13} /></button>
                         <button onClick={() => setViewingDetail(p)} className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100" title="Ver Detalhes"><Eye size={13} /></button>
                         {profile?.role === 'admin' && (
@@ -3986,10 +4182,28 @@ const App = () => {
 
                 {workflowModal.type === 'respond_items' && (
                   <>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Ref. Pedido Next</label>
-                      <input type="text" value={wfData.pedido_next_ref || ''} onChange={e => setWfData(prev => ({ ...prev, pedido_next_ref: e.target.value }))} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200 text-sm" placeholder="Ex: PED-12345" />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Numero Pedido Next *</label>
+                        <input type="text" value={wfData.pedido_next_ref || ''} onChange={e => setWfData(prev => ({ ...prev, pedido_next_ref: e.target.value }))} className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200 text-sm" placeholder="Ex: PED-12345" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">PDF Pedido Fornecedor</label>
+                        <label className="flex items-center gap-2 px-3 py-2 border rounded-xl cursor-pointer hover:bg-gray-50 text-sm text-gray-500">
+                          <Upload size={14} />
+                          <span className="truncate">{wfData.pdfFile?.name || 'Anexar PDF...'}</span>
+                          <input type="file" accept=".pdf" className="hidden" onChange={e => setWfData(prev => ({ ...prev, pdfFile: e.target.files[0] || null }))} />
+                        </label>
+                      </div>
                     </div>
+                    {wfData.pdfFile && (
+                      <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5 text-xs text-green-700">
+                        <FileText size={14} />
+                        <span className="truncate font-medium">{wfData.pdfFile.name}</span>
+                        <span className="text-green-500">({(wfData.pdfFile.size / 1024).toFixed(0)} KB)</span>
+                        <button onClick={() => setWfData(prev => ({ ...prev, pdfFile: null }))} className="ml-auto text-red-400 hover:text-red-600"><X size={12} /></button>
+                      </div>
+                    )}
                     <p className="text-xs text-gray-500 font-medium uppercase">Aprovacao por SKU:</p>
                     <div className="space-y-3">
                       {(workflowModal.pedido.items || []).map((item, idx) => {
@@ -4027,6 +4241,32 @@ const App = () => {
                                 </div>
                               </div>
                             )}
+                            {/* Dados Logistica - preenchido pelo fornecedor */}
+                            <div className="mt-2 pt-2 border-t border-gray-200">
+                              <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">Dados Logistica (Fornecedor)</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] text-gray-500 mb-0.5">Dim. Produto (CxLxA cm)</label>
+                                  <input type="text" value={dec.dim_produto || ''} onChange={e => updateDec('dim_produto', e.target.value)} className="w-full px-2 py-1 border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="30x20x15" />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-gray-500 mb-0.5">Peso Liquido (kg)</label>
+                                  <input type="number" step="0.01" value={dec.peso_liquido || ''} onChange={e => updateDec('peso_liquido', e.target.value)} className="w-full px-2 py-1 border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="0.00" />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-gray-500 mb-0.5">Dim. Caixa Master (CxLxA cm)</label>
+                                  <input type="text" value={dec.dim_caixa_master || ''} onChange={e => updateDec('dim_caixa_master', e.target.value)} className="w-full px-2 py-1 border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="60x40x30" />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-gray-500 mb-0.5">Peso Caixa Master (kg)</label>
+                                  <input type="number" step="0.01" value={dec.peso_caixa_master || ''} onChange={e => updateDec('peso_caixa_master', e.target.value)} className="w-full px-2 py-1 border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="0.00" />
+                                </div>
+                                <div className="col-span-2">
+                                  <label className="block text-[10px] text-gray-500 mb-0.5">Unidades/Jogos por Caixa</label>
+                                  <input type="number" value={dec.unidades_por_caixa || ''} onChange={e => updateDec('unidades_por_caixa', e.target.value)} className="w-full px-2 py-1 border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-purple-200" placeholder="Ex: 6" />
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         );
                       })}
@@ -4051,7 +4291,13 @@ const App = () => {
               <div className="flex justify-end gap-3 p-6 border-t">
                 <button onClick={() => setWorkflowModal(null)} className="px-4 py-2 text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200">Voltar</button>
                 {workflowModal.type === 'respond_items' && (
-                  <button onClick={() => handleNextResponse(workflowModal.pedido, wfData.itemDecisions || [], wfData.pedido_next_ref)} className="px-4 py-2 text-white rounded-xl hover:opacity-90" style={{ backgroundColor: COLORS.purple }}>Confirmar Respostas</button>
+                  <button onClick={async () => {
+                    let pdfUrl = null;
+                    if (wfData.pdfFile) {
+                      pdfUrl = await handlePedidoPdfUpload(wfData.pdfFile, workflowModal.pedido.id);
+                    }
+                    handleNextResponse(workflowModal.pedido, wfData.itemDecisions || [], wfData.pedido_next_ref, pdfUrl);
+                  }} className="px-4 py-2 text-white rounded-xl hover:opacity-90" style={{ backgroundColor: COLORS.purple }}>Confirmar Respostas</button>
                 )}
                 {workflowModal.type === 'cancel' && (
                   <button onClick={() => advanceStatus(workflowModal.pedido, 'cancelado', { motivo_cancelamento: wfData.motivo_cancelamento || null })} disabled={!wfData.motivo_cancelamento} className="px-4 py-2 text-white rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50">Cancelar Pedido</button>
@@ -4078,6 +4324,12 @@ const App = () => {
                   <div><span className="text-gray-500">Status:</span><p><span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusConfig[viewingDetail.status]?.color}`}>{statusConfig[viewingDetail.status]?.icon} {viewingDetail.status?.charAt(0).toUpperCase() + viewingDetail.status?.slice(1)}</span></p></div>
                   <div><span className="text-gray-500">Prazo Entrega:</span><p className="font-medium">{viewingDetail.prazo_entrega || '-'}</p></div>
                   <div><span className="text-gray-500">Criado em:</span><p className="font-medium">{viewingDetail.created_at ? new Date(viewingDetail.created_at).toLocaleDateString('pt-BR') : '-'}</p></div>
+                  {viewingDetail.pedido_next_ref && (
+                    <div><span className="text-gray-500">Pedido Next:</span><p className="font-medium text-purple-700">{viewingDetail.pedido_next_ref}</p></div>
+                  )}
+                  {viewingDetail.pedido_next_pdf_url && (
+                    <div><span className="text-gray-500">PDF Fornecedor:</span><p><a href={viewingDetail.pedido_next_pdf_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-purple-600 hover:text-purple-800 font-medium"><FileText size={14} />Ver PDF</a></p></div>
+                  )}
                 </div>
 
                 {/* Items Table */}
@@ -7964,7 +8216,7 @@ const App = () => {
   // Check profile approval status
   if (profile) {
     // Usuarios sem permissao veem mensagem simples
-    if (profile.role !== 'admin' && profile.role !== 'approved') {
+    if (profile.role !== 'admin' && profile.role !== 'approved' && profile.role !== 'fornecedor') {
       return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
           <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center space-y-4">
