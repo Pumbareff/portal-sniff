@@ -4169,8 +4169,8 @@ const App = () => {
                         {canManage && <button onClick={() => handleDuplicarPedido(p)} className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50" title="Duplicar Ordem"><ClipboardList size={13} /></button>}
                         <button onClick={() => handleDownloadPDF(p)} className="p-1.5 rounded-lg text-purple-600 hover:bg-purple-50" title="Baixar PDF"><Download size={13} /></button>
                         <button onClick={() => setViewingDetail(p)} className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100" title="Ver Detalhes"><Eye size={13} /></button>
-                        {profile?.role === 'admin' && (
-                          <button onClick={() => handleDeletePedido(p)} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50" title="Excluir Ordem (Admin)"><Trash2 size={13} /></button>
+                        {canManage && (
+                          <button onClick={() => handleDeletePedido(p)} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50" title="Excluir Ordem"><Trash2 size={13} /></button>
                         )}
                       </div>
                     </td>
