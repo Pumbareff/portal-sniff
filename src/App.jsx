@@ -82,6 +82,14 @@ const COLORS = {
 // Extracted modal component - prevents parent re-render from destroying DOM/losing focus
 const PEDIDO_EMPTY_ITEM = { sku: '', produto: '', quantidade: '', preco_unitario: '', peso_unitario: '', ncm: '', un: '', ipi_pct: '', valor_nf: '', item_status: 'pendente', preco_next_sugerido: '', motivo_recusa: '', dim_produto: '', peso_liquido: '', dim_caixa_master: '', peso_caixa_master: '', unidades_por_caixa: '' };
 
+// Fornecedores que permitem renegociacao de preco (voltar pedido para negociacao)
+const FORNECEDORES_NEGOCIACAO = ['clink', 'flashgoods', 'moment', 'c3b'];
+const canNegotiatePrice = (fornecedor) => {
+  if (!fornecedor) return false;
+  const f = fornecedor.toLowerCase().trim();
+  return FORNECEDORES_NEGOCIACAO.some(n => f.includes(n));
+};
+
 const NovaOrdemModal = ({ isOpen, onClose, onSubmit }) => {
   const [formData, setFormData] = useState({
     fornecedor: '', items: [{ ...PEDIDO_EMPTY_ITEM }], prazo_entrega: '', observacoes: ''
@@ -3816,9 +3824,23 @@ const App = () => {
         };
       });
       const allApproved = updatedItems.every(i => i.item_status === 'aprovado');
-      const newStatus = allApproved ? 'aprovado' : 'preco_recusado';
+      const allRejected = updatedItems.every(i => i.item_status === 'recusado');
+      const canNeg = canNegotiatePrice(pedido.fornecedor);
+      // CLINK/FlashGoods/Moment: recusado -> preco_recusado (permite renegociar)
+      // Demais fornecedores: recusado e final -> aprovado parcial ou cancelado
+      let newStatus;
+      if (allApproved) {
+        newStatus = 'aprovado';
+      } else if (canNeg) {
+        newStatus = 'preco_recusado';
+      } else if (allRejected) {
+        newStatus = 'cancelado';
+      } else {
+        newStatus = 'aprovado'; // aprovacao parcial - itens aprovados seguem
+      }
       const updates = { items: updatedItems, status: newStatus, pedido_next_ref: pedidoNextRef || null, pedido_next_pdf_url: pdfUrl || null };
       if (newStatus === 'aprovado') updates.aprovado_at = now;
+      if (newStatus === 'cancelado') updates.cancelado_at = now;
       try { await supabase.from('pedidos_fornecedor').update(updates).eq('id', pedido.id); } catch (e) { console.warn(e); }
       setPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, ...updates } : p));
       setWorkflowModal(null);
@@ -4205,6 +4227,12 @@ const App = () => {
                       </div>
                     )}
                     <p className="text-xs text-gray-500 font-medium uppercase">Aprovacao por SKU:</p>
+                    {!canNegotiatePrice(workflowModal.pedido.fornecedor) && (
+                      <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+                        <AlertTriangle size={14} />
+                        <span>Este fornecedor <strong>nao permite renegociacao</strong>. Itens recusados serao definitivos.</span>
+                      </div>
+                    )}
                     <div className="space-y-3">
                       {(workflowModal.pedido.items || []).map((item, idx) => {
                         const dec = wfData.itemDecisions?.[idx] || { status: 'aprovado' };
