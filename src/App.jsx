@@ -3885,29 +3885,33 @@ const App = () => {
       return '';
     };
 
-    // --- NOTIFICATION FLOW (Email via Resend + WhatsApp via Z-API) ---
-    const sendNotification = async (pedido, type) => {
-      // type: 'overdue_price' | 'overdue_faturamento' | 'status_change' | 'new_order'
-      const payload = {
-        pedido_id: pedido.id,
-        numero_oc: pedido.numero_oc,
-        fornecedor: pedido.fornecedor,
-        status: pedido.status,
-        valor_total: pedido.valor_total,
-        itens_resumo: pedido.itens_resumo || (pedido.items || []).map(i => `${i.sku || i.produto} (${i.quantidade})`).join(', '),
-        type,
-        timestamp: new Date().toISOString(),
+    // --- NOTIFICATION FLOW (WhatsApp via local bot queue + Email via Resend) ---
+    const buildNotificationMessage = (pedido, type) => {
+      const valor = (pedido.valor_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+      const itens = pedido.itens_resumo || (pedido.items || []).map(i => `${i.sku || i.produto} (${i.quantidade})`).join(', ');
+      const msgs = {
+        new_order: `*Nova Ordem de Compra Criada*\n\n*OC:* ${pedido.numero_oc}\n*Fornecedor:* ${pedido.fornecedor}\n*Valor Total:* R$ ${valor}\n*Itens:* ${itens}\n\nhttps://portal-sniff.vercel.app`,
+        overdue_price: `*ALERTA - Aprovacao de Preco Atrasada*\n\n*OC:* ${pedido.numero_oc}\n*Fornecedor:* ${pedido.fornecedor}\n*Valor:* R$ ${valor}\n*Status:* Aprov. Preco NEXT\n\nAguardando aprovacao ha mais de 24 horas.\n\nhttps://portal-sniff.vercel.app`,
+        overdue_faturamento: `*ALERTA - Faturamento Atrasado*\n\n*OC:* ${pedido.numero_oc}\n*Fornecedor:* ${pedido.fornecedor}\n*Valor:* R$ ${valor}\n*Status:* A Faturar\n\nAguardando faturamento ha mais de 7 dias uteis.\n\nhttps://portal-sniff.vercel.app`,
       };
-      // WhatsApp via Z-API (Edge Function) - grupo
+      return msgs[type] || `Pedido ${pedido.numero_oc} - ${type}`;
+    };
+
+    const sendNotification = async (pedido, type) => {
+      const message = buildNotificationMessage(pedido, type);
+      // WhatsApp: insert into queue (local bot picks up and sends to group)
+      try {
+        await supabase.from('whatsapp_queue').insert([{
+          type,
+          message,
+          pedido_id: pedido.id,
+          status: 'pending',
+        }]);
+      } catch (e) { console.warn('WhatsApp queue insert failed:', e); }
+      // Email via Resend (Edge Function) - optional, works when configured
       try {
         await supabase.functions.invoke('send-notification', {
-          body: { channel: 'whatsapp', ...payload }
-        });
-      } catch (e) { console.warn('WhatsApp notification failed:', e); }
-      // Email via Resend (Edge Function)
-      try {
-        await supabase.functions.invoke('send-notification', {
-          body: { channel: 'email', ...payload }
+          body: { channel: 'email', type, pedido_id: pedido.id, numero_oc: pedido.numero_oc, fornecedor: pedido.fornecedor, status: pedido.status, valor_total: pedido.valor_total, timestamp: new Date().toISOString() }
         });
       } catch (e) { console.warn('Email notification failed:', e); }
     };
