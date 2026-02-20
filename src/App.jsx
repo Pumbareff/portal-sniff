@@ -3779,6 +3779,8 @@ const App = () => {
         const { data, error } = await supabase.from('pedidos_fornecedor').insert([newPedido]).select();
         if (data && data[0]) {
           setPedidos(prev => [data[0], ...prev]);
+          // Notify WhatsApp group on new order
+          sendNotification({ ...data[0], itens_resumo: produtoResumo }, 'new_order');
         } else if (error) {
           console.error('Insert error:', error.message);
           alert('Erro ao salvar: ' + error.message + '\n\nVerifique se a tabela pedidos_fornecedor existe no Supabase.');
@@ -3883,7 +3885,7 @@ const App = () => {
       return '';
     };
 
-    // --- NOTIFICATION FLOW (Email via Resend + WhatsApp via Evolution API) ---
+    // --- NOTIFICATION FLOW (Email via Resend + WhatsApp via Z-API) ---
     const sendNotification = async (pedido, type) => {
       // type: 'overdue_price' | 'overdue_faturamento' | 'status_change' | 'new_order'
       const payload = {
@@ -3892,21 +3894,22 @@ const App = () => {
         fornecedor: pedido.fornecedor,
         status: pedido.status,
         valor_total: pedido.valor_total,
+        itens_resumo: pedido.itens_resumo || (pedido.items || []).map(i => `${i.sku || i.produto} (${i.quantidade})`).join(', '),
         type,
         timestamp: new Date().toISOString(),
       };
+      // WhatsApp via Z-API (Edge Function) - grupo
+      try {
+        await supabase.functions.invoke('send-notification', {
+          body: { channel: 'whatsapp', ...payload }
+        });
+      } catch (e) { console.warn('WhatsApp notification failed:', e); }
       // Email via Resend (Edge Function)
       try {
         await supabase.functions.invoke('send-notification', {
           body: { channel: 'email', ...payload }
         });
       } catch (e) { console.warn('Email notification failed:', e); }
-      // WhatsApp via Evolution API (Edge Function)
-      try {
-        await supabase.functions.invoke('send-notification', {
-          body: { channel: 'whatsapp', ...payload }
-        });
-      } catch (e) { console.warn('WhatsApp notification failed:', e); }
     };
 
     // Check and send overdue notifications (runs on each pedidos load)

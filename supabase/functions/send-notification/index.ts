@@ -1,14 +1,13 @@
 // Edge Function: send-notification
-// Handles Email (Resend) and WhatsApp (Evolution API) notifications
+// Handles Email (Resend) and WhatsApp (Z-API) notifications
 // Deploy: supabase functions deploy send-notification
 // Secrets needed:
 //   RESEND_API_KEY - from resend.com
-//   EVOLUTION_API_URL - Evolution API base URL (ex: https://evo.sniffhome.com.br)
-//   EVOLUTION_API_KEY - Evolution API token
-//   EVOLUTION_INSTANCE - Evolution instance name
+//   ZAPI_INSTANCE_ID - Z-API instance ID (from painel z-api.io)
+//   ZAPI_TOKEN - Z-API instance token
+//   ZAPI_GROUP_ID - WhatsApp group JID (ex: 120363xxxxx@g.us)
 //   NOTIFICATION_EMAIL_FROM - sender email (ex: pedidos@sniffhome.com.br)
 //   NOTIFICATION_EMAIL_TO - admin email (ex: lucas@sniffhome.com.br)
-//   NOTIFICATION_WHATSAPP_TO - admin WhatsApp (ex: 5511999999999)
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
@@ -25,6 +24,7 @@ interface NotificationPayload {
   fornecedor: string;
   status: string;
   valor_total: number;
+  itens_resumo?: string;
   timestamp: string;
 }
 
@@ -32,28 +32,61 @@ interface NotificationPayload {
 const templates: Record<string, { subject: string; body: string }> = {
   overdue_price: {
     subject: "ALERTA: Aprovacao de Preco Atrasada - {numero_oc}",
-    body: `Pedido *{numero_oc}* do fornecedor *{fornecedor}* esta aguardando aprovacao de preco da NEXT ha mais de 24 horas.\n\nValor: R$ {valor_total}\nStatus: Aprov. Preco NEXT\n\nAcesse o portal para acompanhar: https://portal-sniff.vercel.app`,
+    body: `⚠️ *ALERTA - Aprovacao de Preco Atrasada*
+
+📋 *OC:* {numero_oc}
+🏭 *Fornecedor:* {fornecedor}
+💰 *Valor:* R$ {valor_total}
+📌 *Status:* Aprov. Preco NEXT
+
+⏰ Aguardando aprovacao ha mais de 24 horas.
+
+🔗 https://portal-sniff.vercel.app`,
   },
   overdue_faturamento: {
     subject: "ALERTA: Faturamento Atrasado - {numero_oc}",
-    body: `Pedido *{numero_oc}* do fornecedor *{fornecedor}* esta aguardando faturamento da NEXT ha mais de 7 dias uteis.\n\nValor: R$ {valor_total}\nStatus: A Faturar\n\nAcesse o portal para acompanhar: https://portal-sniff.vercel.app`,
+    body: `🚨 *ALERTA - Faturamento Atrasado*
+
+📋 *OC:* {numero_oc}
+🏭 *Fornecedor:* {fornecedor}
+💰 *Valor:* R$ {valor_total}
+📌 *Status:* A Faturar
+
+⏰ Aguardando faturamento ha mais de 7 dias uteis.
+
+🔗 https://portal-sniff.vercel.app`,
   },
   status_change: {
     subject: "Pedido {numero_oc} - Status Atualizado",
-    body: `O pedido *{numero_oc}* do fornecedor *{fornecedor}* mudou para status: *{status}*.\n\nValor: R$ {valor_total}\n\nAcesse o portal: https://portal-sniff.vercel.app`,
+    body: `📦 *Pedido Atualizado*
+
+📋 *OC:* {numero_oc}
+🏭 *Fornecedor:* {fornecedor}
+💰 *Valor:* R$ {valor_total}
+📌 *Novo Status:* {status}
+
+🔗 https://portal-sniff.vercel.app`,
   },
   new_order: {
     subject: "Nova Ordem de Compra - {numero_oc}",
-    body: `Nova ordem de compra *{numero_oc}* criada para o fornecedor *{fornecedor}*.\n\nValor: R$ {valor_total}\n\nAcesse o portal: https://portal-sniff.vercel.app`,
+    body: `✅ *Nova Ordem de Compra Criada*
+
+📋 *OC:* {numero_oc}
+🏭 *Fornecedor:* {fornecedor}
+💰 *Valor Total:* R$ {valor_total}
+📦 *Itens:* {itens_resumo}
+
+🔗 https://portal-sniff.vercel.app`,
   },
 };
 
 function renderTemplate(template: { subject: string; body: string }, data: NotificationPayload) {
   const replace = (str: string) =>
     str
-      .replace(/{numero_oc}/g, data.numero_oc)
-      .replace(/{fornecedor}/g, data.fornecedor)
-      .replace(/{status}/g, data.status)
+      .replace(/{numero_oc}/g, data.numero_oc || "")
+      .replace(/{fornecedor}/g, data.fornecedor || "")
+      .replace(/{status}/g, data.status || "")
+      .replace(/{itens_resumo}/g, data.itens_resumo || "")
       .replace(/{valor_total}/g, (data.valor_total || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 }));
   return { subject: replace(template.subject), body: replace(template.body) };
 }
@@ -90,16 +123,15 @@ async function sendEmail(payload: NotificationPayload) {
   return { success: res.ok, data: result };
 }
 
-// --- WHATSAPP VIA EVOLUTION API ---
+// --- WHATSAPP VIA Z-API (GROUP) ---
 async function sendWhatsApp(payload: NotificationPayload) {
-  const baseUrl = Deno.env.get("EVOLUTION_API_URL");
-  const apiKey = Deno.env.get("EVOLUTION_API_KEY");
-  const instance = Deno.env.get("EVOLUTION_INSTANCE") || "sniff-bot";
-  const to = Deno.env.get("NOTIFICATION_WHATSAPP_TO");
+  const instanceId = Deno.env.get("ZAPI_INSTANCE_ID");
+  const token = Deno.env.get("ZAPI_TOKEN");
+  const groupId = Deno.env.get("ZAPI_GROUP_ID");
 
-  if (!baseUrl || !apiKey || !to) {
-    console.warn("Evolution API not fully configured, skipping WhatsApp");
-    return { success: false, error: "Evolution API config incomplete" };
+  if (!instanceId || !token || !groupId) {
+    console.warn("Z-API not fully configured, skipping WhatsApp");
+    return { success: false, error: "Z-API config incomplete (need ZAPI_INSTANCE_ID, ZAPI_TOKEN, ZAPI_GROUP_ID)" };
   }
 
   const template = templates[payload.type];
@@ -107,16 +139,19 @@ async function sendWhatsApp(payload: NotificationPayload) {
 
   const { body } = renderTemplate(template, payload);
 
-  const res = await fetch(`${baseUrl}/message/sendText/${instance}`, {
+  const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
+
+  const res = await fetch(url, {
     method: "POST",
-    headers: { apikey: apiKey, "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      number: to,
-      text: body,
+      phone: groupId,
+      message: body,
     }),
   });
 
   const result = await res.json();
+  console.log("Z-API response:", JSON.stringify(result));
   return { success: res.ok, data: result };
 }
 
