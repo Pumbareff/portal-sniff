@@ -325,6 +325,24 @@ const App = () => {
     }
   }, [profile]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [shopeeToast, setShopeeToast] = useState(null);
+
+  // Detect Shopee OAuth return
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shopeeStatus = params.get('shopee');
+    if (shopeeStatus === 'connected') {
+      setShopeeToast({ type: 'success', message: 'Shopee conectada com sucesso!' });
+      setActiveTab('integracoes');
+      window.history.replaceState({}, '', window.location.pathname);
+      setTimeout(() => setShopeeToast(null), 5000);
+    } else if (shopeeStatus === 'error') {
+      const reason = params.get('reason') || 'Erro desconhecido';
+      setShopeeToast({ type: 'error', message: `Erro ao conectar Shopee: ${reason}` });
+      window.history.replaceState({}, '', window.location.pathname);
+      setTimeout(() => setShopeeToast(null), 8000);
+    }
+  }, []);
 
   // States para Academy
   const [courses, setCourses] = useState([]);
@@ -557,6 +575,176 @@ const App = () => {
   };
 
   // PendingApproval e RejectedAccess removidos - admin cria contas diretamente
+
+  // Integracoes View - Shopee API connection management
+  const IntegracoesView = () => {
+    const [shopeeShops, setShopeeShops] = useState([]);
+    const [shopeeLoading, setShopeeLoading] = useState(true);
+    const [shopeeConnecting, setShopeeConnecting] = useState(false);
+    const [disconnecting, setDisconnecting] = useState(null);
+
+    const loadShopeeStatus = async () => {
+      setShopeeLoading(true);
+      try {
+        const resp = await fetch('/api/shopee/status');
+        const data = await resp.json();
+        setShopeeShops(data.shops || []);
+      } catch (e) {
+        console.error('Shopee status error:', e);
+      } finally {
+        setShopeeLoading(false);
+      }
+    };
+
+    useEffect(() => { loadShopeeStatus(); }, []);
+
+    const handleConnect = async () => {
+      setShopeeConnecting(true);
+      try {
+        const resp = await fetch('/api/shopee/auth');
+        const data = await resp.json();
+        if (data.url) {
+          window.location.href = data.url;
+        }
+      } catch (e) {
+        console.error('Shopee auth error:', e);
+        setShopeeConnecting(false);
+      }
+    };
+
+    const handleDisconnect = async (shopId) => {
+      setDisconnecting(shopId);
+      try {
+        await fetch('/api/shopee/disconnect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shop_id: shopId }),
+        });
+        await loadShopeeStatus();
+      } catch (e) {
+        console.error('Shopee disconnect error:', e);
+      } finally {
+        setDisconnecting(null);
+      }
+    };
+
+    return (
+      <div className="p-6 max-w-4xl mx-auto space-y-6">
+        {/* Shopee Toast */}
+        {shopeeToast && (
+          <div className={`fixed top-4 right-4 z-[100] px-6 py-3 rounded-xl shadow-lg text-white font-medium animate-pulse ${shopeeToast.type === 'success' ? 'bg-green-500' : 'bg-red-500'}`}>
+            {shopeeToast.message}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">Integracoes</h2>
+            <p className="text-sm text-gray-500 mt-1">Gerencie conexoes diretas com marketplaces</p>
+          </div>
+        </div>
+
+        {/* Shopee Card */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-6 py-4 bg-gradient-to-r from-orange-500 to-orange-600 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center">
+                <span className="text-orange-500 font-black text-lg">S</span>
+              </div>
+              <div>
+                <h3 className="text-white font-bold text-lg">Shopee API</h3>
+                <p className="text-orange-100 text-xs">Integracao direta via Open Platform</p>
+              </div>
+            </div>
+            <div className={`px-3 py-1 rounded-full text-xs font-bold ${shopeeShops.length > 0 ? 'bg-green-400 text-green-900' : 'bg-orange-200 text-orange-800'}`}>
+              {shopeeShops.length > 0 ? `${shopeeShops.length} loja(s)` : 'Nao conectado'}
+            </div>
+          </div>
+
+          <div className="p-6">
+            {shopeeLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw className="w-5 h-5 animate-spin text-gray-400" />
+                <span className="ml-2 text-gray-500 text-sm">Verificando conexao...</span>
+              </div>
+            ) : shopeeShops.length > 0 ? (
+              <div className="space-y-3">
+                {shopeeShops.map(shop => (
+                  <div key={shop.shop_id} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-3 h-3 rounded-full ${shop.is_healthy ? 'bg-green-400' : 'bg-red-400'}`} />
+                      <div>
+                        <p className="font-semibold text-gray-800">{shop.shop_name || `Loja #${shop.shop_id}`}</p>
+                        <p className="text-xs text-gray-400">
+                          ID: {shop.shop_id} | Token: {shop.token_status === 'valid' ? 'Valido' : 'Expirado'} | Conectada em {new Date(shop.connected_at).toLocaleDateString('pt-BR')}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDisconnect(shop.shop_id)}
+                      disabled={disconnecting === shop.shop_id}
+                      className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {disconnecting === shop.shop_id ? 'Desconectando...' : 'Desconectar'}
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={handleConnect}
+                  disabled={shopeeConnecting}
+                  className="mt-3 w-full py-2.5 text-sm font-medium text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-xl transition-colors disabled:opacity-50"
+                >
+                  {shopeeConnecting ? 'Redirecionando...' : '+ Conectar outra loja'}
+                </button>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Compass className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500 mb-1">Nenhuma loja Shopee conectada</p>
+                <p className="text-xs text-gray-400 mb-4">Conecte sua loja para acessar dados diretamente da Shopee API</p>
+                <button
+                  onClick={handleConnect}
+                  disabled={shopeeConnecting}
+                  className="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-colors disabled:opacity-50 shadow-md"
+                >
+                  {shopeeConnecting ? 'Redirecionando para Shopee...' : 'Conectar Shopee'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Info footer */}
+          <div className="px-6 py-3 bg-gray-50 border-t border-gray-100">
+            <p className="text-xs text-gray-400">
+              Requer app registrado na Shopee Open Platform. Variaveis: SHOPEE_PARTNER_ID, SHOPEE_PARTNER_KEY.
+            </p>
+          </div>
+        </div>
+
+        {/* BaseLinker - existing integration info */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-6 py-4 bg-gradient-to-r from-blue-500 to-blue-600 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center">
+                <span className="text-blue-500 font-black text-lg">B</span>
+              </div>
+              <div>
+                <h3 className="text-white font-bold text-lg">BaseLinker</h3>
+                <p className="text-blue-100 text-xs">Hub de marketplaces</p>
+              </div>
+            </div>
+            <div className="px-3 py-1 rounded-full text-xs font-bold bg-green-400 text-green-900">
+              Ativo
+            </div>
+          </div>
+          <div className="p-6">
+            <p className="text-sm text-gray-600">Integracao ativa via API Token. Gerencia pedidos, estoque e produtos de todos os marketplaces.</p>
+            <p className="text-xs text-gray-400 mt-2">Configurado via BASELINKER_TOKEN no Vercel.</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // Admin Panel Component
   const AdminPanel = () => {
@@ -1140,6 +1328,7 @@ const App = () => {
       { id: 'fulfillment', label: 'Fulfillment', icon: Warehouse, permission: 'fulfillment' },
       { id: 'precificacao', label: 'Precificacao', icon: DollarSign, permission: 'precificacao' },
       { id: 'analisevendas', label: 'Analise de Vendas', icon: TrendingUp, permission: 'analise_vendas' },
+      { id: 'integracoes', label: 'Integracoes', icon: Compass, permission: 'admin' },
     ];
 
     if (profile?.role === 'admin') {
@@ -1159,7 +1348,7 @@ const App = () => {
       { label: 'OPERACOES', ids: ['recebimento', 'vendedor', 'pedidos', 'fulfillment', 'times'] },
       { label: 'INTELIGENCIA', ids: ['analytics', 'analisevendas', 'precificacao'] },
       { label: 'MARKETING', ids: ['marketing'] },
-      { label: 'SISTEMA', ids: ['admin'] },
+      { label: 'SISTEMA', ids: ['integracoes', 'admin'] },
     ];
 
     const marketingChildren = ['marketing', 'gestao_anuncios', 'gestao_kanban', 'oportunidades', 'aguamarinha', 'padrao_sniff'];
@@ -8696,6 +8885,7 @@ const App = () => {
       case 'fulfillment': return <FulfillmentView />;
       case 'precificacao': return <PrecificacaoView />;
       case 'analisevendas': return <AnaliseVendasView />;
+      case 'integracoes': return <IntegracoesView />;
       case 'admin': return <AdminPanel />;
       default: return <DashboardView />;
     }
@@ -8749,7 +8939,7 @@ const App = () => {
             >
               <Menu size={24} />
             </button>
-            <h1 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('aguamarinha', 'Agua Marinha').replace('gestao_anuncios', 'Gestao de Produtos Parados').replace('gestao_kanban', 'Kanban - Produtos Parados').replace('oportunidades', 'Oportunidades').replace('analisevendas', 'Analise de Vendas')}</h1>
+            <h1 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('aguamarinha', 'Agua Marinha').replace('gestao_anuncios', 'Gestao de Produtos Parados').replace('gestao_kanban', 'Kanban - Produtos Parados').replace('oportunidades', 'Oportunidades').replace('analisevendas', 'Analise de Vendas').replace('integracoes', 'Integracoes')}</h1>
           </div>
 
           <div className="flex items-center gap-6">
