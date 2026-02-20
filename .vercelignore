@@ -1,0 +1,12 @@
+whatsapp-bot
+api/debug
+*.png
+*.json.bak
+temp_*.json
+receb_temp.json
+diag_*.py
+compare_data.py
+fix_missing_data.py
+summarize.py
+seed.mjs
+nul

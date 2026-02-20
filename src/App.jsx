@@ -586,7 +586,7 @@ const App = () => {
     const loadShopeeStatus = async () => {
       setShopeeLoading(true);
       try {
-        const resp = await fetch('/api/shopee/status');
+        const resp = await fetch('/api/shopee?action=status');
         const data = await resp.json();
         setShopeeShops(data.shops || []);
       } catch (e) {
@@ -601,7 +601,7 @@ const App = () => {
     const handleConnect = async () => {
       setShopeeConnecting(true);
       try {
-        const resp = await fetch('/api/shopee/auth');
+        const resp = await fetch('/api/shopee?action=auth');
         const data = await resp.json();
         if (data.url) {
           window.location.href = data.url;
@@ -615,7 +615,7 @@ const App = () => {
     const handleDisconnect = async (shopId) => {
       setDisconnecting(shopId);
       try {
-        await fetch('/api/shopee/disconnect', {
+        await fetch('/api/shopee?action=disconnect', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ shop_id: shopId }),
