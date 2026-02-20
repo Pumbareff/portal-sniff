@@ -3922,14 +3922,6 @@ const App = () => {
       });
     }, [pedidos]);
 
-    // Simulate overdue for testing (set ok_faturar_at to 10 days ago)
-    const simulateOverdue = async (pedido) => {
-      const tenDaysAgo = new Date(Date.now() - 10 * 86400000).toISOString();
-      const updates = { status: 'ok_faturar', ok_faturar_at: tenDaysAgo, aprovado_at: new Date(Date.now() - 12 * 86400000).toISOString() };
-      try { await supabase.from('pedidos_fornecedor').update(updates).eq('id', pedido.id); } catch (e) { console.warn(e); }
-      setPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, ...updates } : p));
-    };
-
     const handleDeletePedido = async (pedido) => {
       if (!confirm(`Excluir pedido ${pedido.numero_oc}?`)) return;
       try {
@@ -4219,9 +4211,6 @@ const App = () => {
                         <button onClick={() => setViewingDetail(p)} className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100" title="Ver Detalhes"><Eye size={13} /></button>
                         {canManage && (
                           <button onClick={() => handleDeletePedido(p)} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50" title="Excluir Ordem"><Trash2 size={13} /></button>
-                        )}
-                        {profile?.role === 'admin' && p.status === 'pendente' && (
-                          <button onClick={() => simulateOverdue(p)} className="p-1.5 rounded-lg text-orange-400 hover:text-orange-600 hover:bg-orange-50" title="Simular Atraso 7d (teste)"><AlertTriangle size={13} /></button>
                         )}
                       </div>
                     </td>
