@@ -10,7 +10,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const IS_SANDBOX = process.env.SHOPEE_SANDBOX !== 'false'; // sandbox by default until Go Live
 const BASE_URL = IS_SANDBOX
-  ? 'https://partner.test-stable.shopeemobile.com/api/v2'
+  ? 'https://openplatform.sandbox.test-stable.shopee.sg/api/v2'
   : 'https://partner.shopeemobile.com/api/v2';
 const PORTAL_URL = 'https://portal-sniff.vercel.app';
 const REDIRECT_URI = `${PORTAL_URL}/api/shopee?action=callback`;
