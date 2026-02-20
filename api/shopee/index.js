@@ -226,6 +226,26 @@ export default async function handler(req, res) {
       case 'callback': return await handleCallback(req, res);
       case 'status': return await handleStatus(req, res);
       case 'disconnect': return await handleDisconnect(req, res);
+      case 'debug': {
+        const { partnerId, partnerKey } = getClient();
+        const path = '/api/v2/shop/auth_partner';
+        const ts = getTimestamp();
+        const base = `${partnerId}${path}${ts}`;
+        const sig = hmacSign(partnerId, partnerKey, path, ts);
+        return res.status(200).json({
+          base_url: BASE_URL,
+          is_sandbox: IS_SANDBOX,
+          partner_id: partnerId,
+          partner_id_type: typeof partnerId,
+          key_length: partnerKey.length,
+          key_prefix: partnerKey.substring(0, 4),
+          timestamp: ts,
+          path,
+          base_string: base,
+          base_string_length: base.length,
+          sign: sig,
+        });
+      }
       default: return res.status(400).json({ error: `Acao desconhecida: ${action}`, valid: ['auth', 'callback', 'status', 'disconnect'] });
     }
   } catch (error) {
