@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import DefesaCatalogo from './components/defesa/DefesaCatalogo';
+import MarketingHubView from './components/marketing/MarketingHubView';
 import GestaoKanbanView from './components/kanban/GestaoKanbanView';
 import {
   LayoutDashboard,
@@ -1355,7 +1356,7 @@ const App = () => {
       { label: 'SISTEMA', ids: ['integracoes', 'admin'] },
     ];
 
-    const marketingChildren = ['marketing', 'gestao_anuncios', 'gestao_kanban', 'oportunidades', 'aguamarinha', 'padrao_sniff'];
+    const marketingChildren = ['marketing', 'produtos_comprados', 'gestao_anuncios', 'gestao_kanban', 'oportunidades', 'aguamarinha', 'padrao_sniff'];
     const comprasChildren = ['compras', 'pedidos_fornecedor'];
 
     const renderNavItem = (item) => {
@@ -1363,7 +1364,7 @@ const App = () => {
       const isMarketingExpanded = isMarketingGroup && marketingChildren.includes(activeTab);
       const isComprasGroup = item.id === 'compras';
       const isComprasExpanded = isComprasGroup && comprasChildren.includes(activeTab);
-      const isActive = activeTab === item.id || (isMarketingGroup && ['gestao_anuncios', 'gestao_kanban', 'oportunidades', 'aguamarinha', 'padrao_sniff'].includes(activeTab)) || (isComprasGroup && comprasChildren.includes(activeTab));
+      const isActive = activeTab === item.id || (isMarketingGroup && ['produtos_comprados', 'gestao_anuncios', 'gestao_kanban', 'oportunidades', 'aguamarinha', 'padrao_sniff'].includes(activeTab)) || (isComprasGroup && comprasChildren.includes(activeTab));
 
       return (
         <div key={item.id} className="relative">
@@ -1397,7 +1398,8 @@ const App = () => {
           {isMarketingGroup && isMarketingExpanded && isSidebarOpen && (
             <div className="ml-6 mt-1 space-y-0.5 border-l-2 border-purple-400/20 pl-3">
               {[
-                { id: 'marketing', label: 'Produtos Comprados' },
+                { id: 'marketing', label: 'Calendario E-commerce' },
+                { id: 'produtos_comprados', label: 'Produtos Comprados' },
                 { id: 'gestao_anuncios', label: 'Produtos Parados' },
                 { id: 'gestao_kanban', label: 'Kanban Parados' },
                 { id: 'oportunidades', label: 'Oportunidades' },
@@ -8487,7 +8489,8 @@ const App = () => {
       case 'times': return <TimesView />;
       case 'compras': return <PedidoFornecedorView />;
       case 'pedidos_fornecedor': return <PedidoFornecedorView />;
-      case 'marketing': return <MarketingView />;
+      case 'marketing': return <MarketingHubView />;
+      case 'produtos_comprados': return <MarketingView />;
       case 'gestao_anuncios': return <GestaoAnunciosView />;
       case 'gestao_kanban': return <GestaoKanbanView />;
       case 'oportunidades': return <OportunidadesView />;
@@ -8548,7 +8551,7 @@ const App = () => {
             >
               <Menu size={24} />
             </button>
-            <h1 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('aguamarinha', 'Agua Marinha').replace('gestao_anuncios', 'Gestao de Produtos Parados').replace('gestao_kanban', 'Kanban - Produtos Parados').replace('oportunidades', 'Oportunidades').replace('analisevendas', 'Analise de Vendas').replace('integracoes', 'Integracoes').replace('compras', 'Compras').replace('pedidos_fornecedor', 'Pedidos Fornecedor')}</h1>
+            <h1 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('aguamarinha', 'Agua Marinha').replace('gestao_anuncios', 'Gestao de Produtos Parados').replace('gestao_kanban', 'Kanban - Produtos Parados').replace('oportunidades', 'Oportunidades').replace('analisevendas', 'Analise de Vendas').replace('integracoes', 'Integracoes').replace('compras', 'Compras').replace('pedidos_fornecedor', 'Pedidos Fornecedor').replace('produtos_comprados', 'Produtos Comprados')}</h1>
           </div>
 
           <div className="flex items-center gap-6">
