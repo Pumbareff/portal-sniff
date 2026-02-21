@@ -4117,16 +4117,6 @@ const App = () => {
     };
 
     const sendNotification = async (pedido, type) => {
-      const message = buildNotificationMessage(pedido, type);
-      // WhatsApp: insert into queue (local bot picks up and sends to group)
-      try {
-        await supabase.from('whatsapp_queue').insert([{
-          type,
-          message,
-          pedido_id: pedido.id,
-          status: 'pending',
-        }]);
-      } catch (e) { console.warn('WhatsApp queue insert failed:', e); }
       // Email via Resend (Edge Function) - optional, works when configured
       try {
         await supabase.functions.invoke('send-notification', {
