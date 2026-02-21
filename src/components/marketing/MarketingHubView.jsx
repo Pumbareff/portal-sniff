@@ -13,6 +13,9 @@ const CATEGORY_CONFIG = {
   sazonal: { label: 'Sazonal', color: '#0EA5E9', bg: '#F0F9FF', border: '#BAE6FD' },
   promocional: { label: 'Promocional', color: '#F59E0B', bg: '#FFFBEB', border: '#FDE68A' },
   marketplace: { label: 'Marketplace', color: '#10B981', bg: '#ECFDF5', border: '#A7F3D0' },
+  spike: { label: 'Spike Day', color: '#EF4444', bg: '#FEF2F2', border: '#FECACA' },
+  amazon: { label: 'Amazon', color: '#F97316', bg: '#FFF7ED', border: '#FED7AA' },
+  magalu: { label: 'Magalu', color: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE' },
 };
 
 const IMPORTANCE_LABELS = { 1: 'Baixa', 2: 'Moderada', 3: 'Media', 4: 'Alta', 5: 'Critica' };
@@ -61,6 +64,30 @@ const ECOMMERCE_EVENTS_2026 = [
   // DEZEMBRO
   { id: 30, date: '2026-12-25', name: 'Natal', category: 'comemorativo', importance: 5, description: 'Maior data em valor de ticket medio. Presentes, decoracao, alimentos gourmet.', tips: 'Entrega garantida antes do Natal. Embalagem premium. Gift cards.', prepDays: 45 },
   { id: 31, date: '2026-12-31', name: 'Reveillon / Ano Novo', category: 'sazonal', importance: 3, description: 'Moda branca, decoracao, bebidas, viagens.', tips: 'Flash sales ultimas horas. Preparar liquidacao de janeiro.', prepDays: 14 },
+  // SPIKE DAYS - Datas Duplas (Shopee, Mercado Livre, Amazon, Magalu participam)
+  { id: 32, date: '2026-01-01', name: 'Spike Day 1.1', category: 'spike', importance: 3, description: 'Primeira data dupla do ano. Todos os marketplaces com ofertas de Ano Novo.', tips: 'Combinar com liquidacao de verao. Cupons exclusivos por marketplace.', prepDays: 7 },
+  { id: 33, date: '2026-02-02', name: 'Spike Day 2.2', category: 'spike', importance: 3, description: 'Data dupla de fevereiro. Shopee lidera com cupons agressivos.', tips: 'Preparar estoque para flash sales. Ads focados em mobile.', prepDays: 10 },
+  { id: 34, date: '2026-03-03', name: 'Spike Day 3.3', category: 'spike', importance: 4, description: 'Esquenta para o Dia do Consumidor (15/03). Alta visibilidade nos marketplaces.', tips: 'Usar como pre-aquecimento para semana do consumidor. Cupons de frete gratis.', prepDays: 10 },
+  { id: 35, date: '2026-04-04', name: 'Spike Day 4.4', category: 'spike', importance: 3, description: 'Data dupla de abril. Boa para categorias de casa e decoracao.', tips: 'Descontos progressivos. Kits tematicos de outono.', prepDays: 10 },
+  { id: 36, date: '2026-05-05', name: 'Spike Day 5.5', category: 'spike', importance: 4, description: 'Esquenta para o Dia das Maes. Marketplaces com campanhas de presentes.', tips: 'Vitrine de presentes ate R$50, R$100, R$200. Frete gratis para maes.', prepDays: 10 },
+  { id: 37, date: '2026-06-06', name: 'Spike Day 6.6', category: 'spike', importance: 4, description: 'Esquenta Dia dos Namorados (12/06). Alta demanda em presentes.', tips: 'Kits romanticos. Embalagem presente. Entrega express.', prepDays: 10 },
+  { id: 38, date: '2026-07-07', name: 'Spike Day 7.7 / Aniversario Shopee', category: 'spike', importance: 5, description: 'Aniversario da Shopee no Brasil. MAIOR spike day do ano. Todos os marketplaces competem.', tips: 'Estoque reforco. Ads com orcamento dobrado. Cupons empilhaveis.', prepDays: 21 },
+  { id: 39, date: '2026-08-08', name: 'Spike Day 8.8', category: 'spike', importance: 4, description: 'Pos Dia dos Pais. Marketplaces mantendo momentum de vendas.', tips: 'Liquidacao pos Dia dos Pais + cupons da data dupla.', prepDays: 10 },
+  { id: 40, date: '2026-09-09', name: 'Spike Day 9.9 Super Shopping Day', category: 'spike', importance: 5, description: 'Um dos maiores spike days. Shopee 9.9 Super Shopping Day. Altissimo volume.', tips: 'Principal spike day do 2o semestre. Ads agressivos. Toda a vitrine com desconto.', prepDays: 21 },
+  { id: 41, date: '2026-10-10', name: 'Spike Day 10.10', category: 'spike', importance: 4, description: 'Proximo ao Dia das Criancas (12/10). Sinergia forte entre datas.', tips: 'Combinar spike com campanha de Dia das Criancas. Brinquedos e games.', prepDays: 10 },
+  { id: 42, date: '2026-11-11', name: 'Spike Day 11.11 Singles Day', category: 'spike', importance: 5, description: 'Maior data de vendas do mundo (origem China). Pre-Black Friday nos marketplaces.', tips: 'Esquenta Black Friday. Ofertas flash a cada hora. Countdown no anuncio.', prepDays: 21 },
+  { id: 43, date: '2026-12-12', name: 'Spike Day 12.12', category: 'spike', importance: 4, description: 'Ultimo spike day do ano. Corrida final de Natal nos marketplaces.', tips: 'Ultima chance de frete gratis antes do Natal. Urgencia maxima nos ads.', prepDays: 14 },
+  // AMAZON - Datas Exclusivas
+  { id: 44, date: '2026-07-15', name: 'Amazon Prime Day (dia 1)', category: 'amazon', importance: 5, description: 'MAIOR evento da Amazon. 2 dias de ofertas exclusivas para membros Prime. Recorde de vendas.', tips: 'Cadastrar produtos no Prime. Ofertas Relampago. Ads Sponsored Products com budget 3x.', prepDays: 45 },
+  { id: 45, date: '2026-07-16', name: 'Amazon Prime Day (dia 2)', category: 'amazon', importance: 5, description: 'Segundo dia do Prime Day. Novas ofertas a cada hora. Categorias tech e casa lideram.', tips: 'Monitorar concorrencia em tempo real. Reajustar precos. Ofertas do Dia.', prepDays: 45 },
+  { id: 46, date: '2026-10-08', name: 'Mega Oferta Amazon Prime', category: 'amazon', importance: 4, description: 'Segundo evento Prime do ano. Foco em eletronicos, moda e casa. Esquenta para Black Friday.', tips: 'Estrategia similar ao Prime Day. Testar precos para Black Friday.', prepDays: 30 },
+  { id: 47, date: '2026-03-15', name: 'Amazon Semana do Consumidor', category: 'amazon', importance: 4, description: 'Amazon participa forte na Semana do Consumidor com ofertas em todas as categorias.', tips: 'Ofertas Relampago + Cupons Amazon. Aproveitar trafego organico da data.', prepDays: 14 },
+  // MAGALU - Datas Exclusivas
+  { id: 48, date: '2026-01-09', name: 'Liquidacao Fantastica Magalu', category: 'magalu', importance: 5, description: 'MAIOR evento do Magalu. Ate 80% OFF. Filas virtuais. Dura ate 12/01. Altissimo volume.', tips: 'Precificar agressivo. Estoque reforco. A maior liquidacao do varejo BR.', prepDays: 30 },
+  { id: 49, date: '2026-09-16', name: 'Aniversario Magalu', category: 'magalu', importance: 5, description: 'Aniversario do Magazine Luiza. Ate 80% OFF + sorteios de premios, carros e viagens.', tips: 'Participar da campanha oficial. Descontos competitivos. Produto destaque na vitrine.', prepDays: 30 },
+  { id: 50, date: '2026-05-10', name: 'Magalu Dia das Maes', category: 'magalu', importance: 4, description: 'Campanha forte do Magalu para Dia das Maes. Eletro, moda e beleza lideram.', tips: 'Guia de presentes no Magalu. Parcelamento estendido atrai conversao.', prepDays: 21 },
+  { id: 51, date: '2026-08-09', name: 'Magalu Dia dos Pais', category: 'magalu', importance: 4, description: 'Campanha Magalu Dia dos Pais. Tech, ferramentas e bebidas premium.', tips: 'Categorias masculinas com destaque. Frete gratis para eletronicos.', prepDays: 21 },
+  { id: 52, date: '2026-11-27', name: 'Black das Blacks Magalu', category: 'magalu', importance: 5, description: 'Black Friday do Magalu com branding proprio. Ate 80% OFF + 15% extra a vista.', tips: 'Alinhar precos com campanha Magalu. Ads no ecossistema Magalu Ads.', prepDays: 45 },
 ];
 
 const MONTH_NAMES = ['Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
