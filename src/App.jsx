@@ -53,7 +53,8 @@ import {
   Camera,
   Upload,
   Compass,
-  ShoppingCart
+  ShoppingCart,
+  Store
 } from 'lucide-react';
 import {
   BarChart,
@@ -581,6 +582,137 @@ const App = () => {
   };
 
   // PendingApproval e RejectedAccess removidos - admin cria contas diretamente
+
+  // Shopee View - Dashboard e sub-views da integracao Shopee API
+  const ShopeeView = ({ subTab = 'dashboard' }) => {
+    const [shopData, setShopData] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+      (async () => {
+        setLoading(true);
+        try {
+          const resp = await fetch('/api/shopee?action=status');
+          const data = await resp.json();
+          setShopData(data);
+        } catch (e) {
+          console.error('Shopee status error:', e);
+        } finally {
+          setLoading(false);
+        }
+      })();
+    }, []);
+
+    const shop = shopData?.shops?.[0];
+    const isConnected = shop && shop.is_healthy;
+
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#EE4D2D]" />
+        </div>
+      );
+    }
+
+    if (!isConnected) {
+      return (
+        <div className="max-w-lg mx-auto mt-20 text-center">
+          <div className="w-20 h-20 bg-orange-100 rounded-2xl mx-auto mb-4 flex items-center justify-center">
+            <Store className="text-[#EE4D2D] w-10 h-10" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">Shopee nao conectada</h2>
+          <p className="text-gray-500 mb-6">Conecte sua loja Shopee em Integracoes para acessar os dados.</p>
+          <button onClick={() => setActiveTab('integracoes')} className="px-6 py-3 bg-[#EE4D2D] text-white rounded-xl font-medium hover:bg-[#d4411f] transition-colors">
+            Ir para Integracoes
+          </button>
+        </div>
+      );
+    }
+
+    const modules = [
+      { id: 'pedidos', label: 'Pedidos', desc: 'Lista de pedidos, status, detalhes e itens vendidos', icon: ClipboardList, color: 'blue', available: true },
+      { id: 'produtos', label: 'Produtos', desc: 'Catalogo completo, estoque, precos e variantes', icon: Package, color: 'green', available: true },
+      { id: 'financeiro', label: 'Financeiro', desc: 'Saldo, comissoes, repasses e escrow', icon: DollarSign, color: 'emerald', available: true },
+      { id: 'performance', label: 'Performance', desc: 'Metricas da loja, taxa de cancelamento e avaliacao', icon: TrendingUp, color: 'purple', available: true },
+      { id: 'logistica', label: 'Logistica', desc: 'Rastreamento de envios e parametros de frete', icon: Truck, color: 'orange', available: true },
+      { id: 'devolucoes', label: 'Devolucoes', desc: 'Lista de devolucoes, motivos e status', icon: RefreshCw, color: 'red', available: true },
+    ];
+
+    // Sub-tab content
+    const renderSubContent = () => {
+      const currentModule = modules.find(m => subTab === m.id);
+      if (currentModule && subTab !== 'dashboard') {
+        return (
+          <div className="max-w-4xl mx-auto mt-8 text-center">
+            <div className={`w-16 h-16 bg-${currentModule.color}-100 rounded-2xl mx-auto mb-4 flex items-center justify-center`}>
+              <currentModule.icon className={`text-${currentModule.color}-600 w-8 h-8`} />
+            </div>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">{currentModule.label}</h2>
+            <p className="text-gray-500 mb-4">{currentModule.desc}</p>
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-orange-50 text-[#EE4D2D] rounded-xl text-sm font-medium">
+              <Clock size={16} />
+              Em desenvolvimento - dados serao carregados via Shopee API v2
+            </div>
+          </div>
+        );
+      }
+
+      // Dashboard (default)
+      return (
+        <>
+          {/* Shop Info Card */}
+          <div className="bg-gradient-to-r from-[#EE4D2D] to-[#FF6633] rounded-2xl p-6 text-white shadow-lg mb-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white/70 text-sm">Loja Conectada</p>
+                <h2 className="text-2xl font-bold mt-1">{shop.shop_name}</h2>
+                <div className="flex items-center gap-4 mt-3">
+                  <span className="text-sm bg-white/20 px-3 py-1 rounded-full">ID: {shop.shop_id}</span>
+                  <span className="text-sm bg-white/20 px-3 py-1 rounded-full">{shop.region}</span>
+                  <span className={`text-sm px-3 py-1 rounded-full ${shop.token_status === 'valid' ? 'bg-green-400/30' : 'bg-red-400/30'}`}>
+                    Token: {shop.token_status === 'valid' ? 'Valido' : 'Expirado'}
+                  </span>
+                </div>
+              </div>
+              <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center">
+                <Store className="w-8 h-8" />
+              </div>
+            </div>
+            <p className="text-white/60 text-xs mt-4">Conectada em {new Date(shop.connected_at).toLocaleDateString('pt-BR')}</p>
+          </div>
+
+          {/* Module Cards */}
+          <h3 className="text-lg font-bold text-gray-800 mb-4">Modulos Disponiveis</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {modules.map(mod => (
+              <button key={mod.id}
+                onClick={() => setActiveTab(`shopee_${mod.id}`)}
+                className="bg-white rounded-xl p-5 border border-gray-100 hover:border-[#EE4D2D]/30 hover:shadow-lg transition-all duration-200 text-left group"
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div className={`w-10 h-10 bg-${mod.color}-100 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform`}>
+                    <mod.icon className={`text-${mod.color}-600 w-5 h-5`} />
+                  </div>
+                  <h4 className="font-bold text-gray-800">{mod.label}</h4>
+                </div>
+                <p className="text-sm text-gray-500">{mod.desc}</p>
+                <div className="flex items-center gap-1 mt-3 text-[#EE4D2D] text-xs font-medium">
+                  <span>Acessar</span>
+                  <ArrowRight size={12} />
+                </div>
+              </button>
+            ))}
+          </div>
+        </>
+      );
+    };
+
+    return (
+      <div className="p-6">
+        {renderSubContent()}
+      </div>
+    );
+  };
 
   // Integracoes View - Shopee API connection management
   const IntegracoesView = () => {
@@ -1334,6 +1466,7 @@ const App = () => {
       { id: 'fulfillment', label: 'Fulfillment', icon: Warehouse, permission: 'fulfillment' },
       { id: 'precificacao', label: 'Precificacao', icon: DollarSign, permission: 'precificacao' },
       { id: 'analisevendas', label: 'Analise de Vendas', icon: TrendingUp, permission: 'analise_vendas' },
+      { id: 'shopee', label: 'Shopee', icon: Store, permission: 'admin' },
       { id: 'integracoes', label: 'Integracoes', icon: Compass, permission: 'admin' },
     ];
 
@@ -1354,18 +1487,22 @@ const App = () => {
       { label: 'OPERACOES', ids: ['recebimento', 'vendedor', 'compras', 'fulfillment', 'times'] },
       { label: 'INTELIGENCIA', ids: ['analytics', 'analisevendas', 'precificacao'] },
       { label: 'MARKETING', ids: ['marketing'] },
+      { label: 'MARKETPLACE', ids: ['shopee'] },
       { label: 'SISTEMA', ids: ['integracoes', 'admin'] },
     ];
 
     const marketingChildren = ['marketing', 'produtos_comprados', 'gestao_anuncios', 'gestao_kanban', 'oportunidades', 'aguamarinha', 'padrao_sniff'];
     const comprasChildren = ['compras', 'controle_pagamentos'];
+    const shopeeChildren = ['shopee', 'shopee_pedidos', 'shopee_produtos', 'shopee_financeiro', 'shopee_performance', 'shopee_logistica', 'shopee_devolucoes'];
 
     const renderNavItem = (item) => {
       const isMarketingGroup = item.id === 'marketing';
       const isMarketingExpanded = isMarketingGroup && marketingChildren.includes(activeTab);
       const isComprasGroup = item.id === 'compras';
       const isComprasExpanded = isComprasGroup && comprasChildren.includes(activeTab);
-      const isActive = activeTab === item.id || (isMarketingGroup && ['produtos_comprados', 'gestao_anuncios', 'gestao_kanban', 'oportunidades', 'aguamarinha', 'padrao_sniff'].includes(activeTab)) || (isComprasGroup && comprasChildren.includes(activeTab));
+      const isShopeeGroup = item.id === 'shopee';
+      const isShopeeExpanded = isShopeeGroup && shopeeChildren.includes(activeTab);
+      const isActive = activeTab === item.id || (isMarketingGroup && ['produtos_comprados', 'gestao_anuncios', 'gestao_kanban', 'oportunidades', 'aguamarinha', 'padrao_sniff'].includes(activeTab)) || (isComprasGroup && comprasChildren.includes(activeTab)) || (isShopeeGroup && shopeeChildren.includes(activeTab));
 
       return (
         <div key={item.id} className="relative">
@@ -1394,6 +1531,9 @@ const App = () => {
             )}
             {isComprasGroup && isSidebarOpen && (
               <ChevronDown size={14} className={`transition-transform duration-200 ${isComprasExpanded ? 'rotate-0' : '-rotate-90'}`} />
+            )}
+            {isShopeeGroup && isSidebarOpen && (
+              <ChevronDown size={14} className={`transition-transform duration-200 ${isShopeeExpanded ? 'rotate-0' : '-rotate-90'}`} />
             )}
           </button>
           {isMarketingGroup && isMarketingExpanded && isSidebarOpen && (
@@ -1431,6 +1571,30 @@ const App = () => {
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-xs transition-all duration-200 ${
                     activeTab === sub.id
                     ? 'bg-[#F4B942]/20 text-[#F4B942] font-semibold'
+                    : 'text-purple-300 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  {sub.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {isShopeeGroup && isShopeeExpanded && isSidebarOpen && (
+            <div className="ml-6 mt-1 space-y-0.5 border-l-2 border-orange-400/20 pl-3">
+              {[
+                { id: 'shopee', label: 'Dashboard' },
+                { id: 'shopee_pedidos', label: 'Pedidos' },
+                { id: 'shopee_produtos', label: 'Produtos' },
+                { id: 'shopee_financeiro', label: 'Financeiro' },
+                { id: 'shopee_performance', label: 'Performance' },
+                { id: 'shopee_logistica', label: 'Logistica' },
+                { id: 'shopee_devolucoes', label: 'Devolucoes' },
+              ].map(sub => (
+                <button key={sub.id}
+                  onClick={() => setActiveTab(sub.id)}
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-xs transition-all duration-200 ${
+                    activeTab === sub.id
+                    ? 'bg-[#EE4D2D]/20 text-[#EE4D2D] font-semibold'
                     : 'text-purple-300 hover:text-white hover:bg-white/5'
                   }`}
                 >
@@ -8489,6 +8653,13 @@ const App = () => {
       case 'fulfillment': return <FulfillmentView />;
       case 'precificacao': return <PrecificacaoView />;
       case 'analisevendas': return <AnaliseVendasView />;
+      case 'shopee': return <ShopeeView subTab="dashboard" />;
+      case 'shopee_pedidos': return <ShopeeView subTab="pedidos" />;
+      case 'shopee_produtos': return <ShopeeView subTab="produtos" />;
+      case 'shopee_financeiro': return <ShopeeView subTab="financeiro" />;
+      case 'shopee_performance': return <ShopeeView subTab="performance" />;
+      case 'shopee_logistica': return <ShopeeView subTab="logistica" />;
+      case 'shopee_devolucoes': return <ShopeeView subTab="devolucoes" />;
       case 'integracoes': return <IntegracoesView />;
       case 'admin': return <AdminPanel />;
       default: return <DashboardView />;
