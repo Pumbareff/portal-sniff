@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import DefesaCatalogo from './components/defesa/DefesaCatalogo';
+import GestaoKanbanView from './components/kanban/GestaoKanbanView';
 import {
   LayoutDashboard,
   GraduationCap,
@@ -49,7 +50,8 @@ import {
   Star,
   Camera,
   Upload,
-  Compass
+  Compass,
+  ShoppingCart
 } from 'lucide-react';
 import {
   BarChart,
@@ -311,7 +313,9 @@ const App = () => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(() => {
-    return localStorage.getItem('portal-sniff-tab') || 'dashboard';
+    const saved = localStorage.getItem('portal-sniff-tab') || 'dashboard';
+    if (saved === 'pedidos') return 'compras';
+    return saved;
   });
   const [amSubTab, setAmSubTab] = useState('dashboard-am');
 
@@ -320,8 +324,8 @@ const App = () => {
     localStorage.setItem('portal-sniff-tab', activeTab);
   }, [activeTab]);
   useEffect(() => {
-    if (profile?.role === 'fornecedor' && activeTab !== 'pedidos') {
-      setActiveTab('pedidos');
+    if (profile?.role === 'fornecedor' && !['compras', 'pedidos_fornecedor'].includes(activeTab)) {
+      setActiveTab('compras');
     }
   }, [profile]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -1323,7 +1327,7 @@ const App = () => {
       { id: 'vendedor', label: 'Area Vendedor', icon: ClipboardList, permission: 'vendedor' },
       { id: 'analytics', label: 'Analytics', icon: BarChart3, permission: 'analytics' },
       { id: 'times', label: 'Gestao de Times', icon: Users, permission: 'times' },
-      { id: 'pedidos', label: 'Pedidos Fornecedor', icon: Truck, permission: 'pedidos' },
+      { id: 'compras', label: 'Compras', icon: ShoppingCart, permission: 'pedidos' },
       { id: 'marketing', label: 'Marketing', icon: Megaphone, permission: 'marketing' },
       { id: 'fulfillment', label: 'Fulfillment', icon: Warehouse, permission: 'fulfillment' },
       { id: 'precificacao', label: 'Precificacao', icon: DollarSign, permission: 'precificacao' },
@@ -1338,25 +1342,28 @@ const App = () => {
     const canSee = (item) => {
       if (profile?.role === 'admin') return true;
       if (item.id === 'admin') return false;
-      if (profile?.role === 'fornecedor') return item.id === 'pedidos';
+      if (profile?.role === 'fornecedor') return item.id === 'compras';
       return profile?.permissions?.[item.permission] === true;
     };
 
     // Grouped sections
     const sections = [
       { label: 'PRINCIPAL', ids: ['dashboard', 'academy'] },
-      { label: 'OPERACOES', ids: ['recebimento', 'vendedor', 'pedidos', 'fulfillment', 'times'] },
+      { label: 'OPERACOES', ids: ['recebimento', 'vendedor', 'compras', 'fulfillment', 'times'] },
       { label: 'INTELIGENCIA', ids: ['analytics', 'analisevendas', 'precificacao'] },
       { label: 'MARKETING', ids: ['marketing'] },
       { label: 'SISTEMA', ids: ['integracoes', 'admin'] },
     ];
 
     const marketingChildren = ['marketing', 'gestao_anuncios', 'gestao_kanban', 'oportunidades', 'aguamarinha', 'padrao_sniff'];
+    const comprasChildren = ['compras', 'pedidos_fornecedor'];
 
     const renderNavItem = (item) => {
       const isMarketingGroup = item.id === 'marketing';
       const isMarketingExpanded = isMarketingGroup && marketingChildren.includes(activeTab);
-      const isActive = activeTab === item.id || (isMarketingGroup && ['gestao_anuncios', 'gestao_kanban', 'oportunidades', 'aguamarinha', 'padrao_sniff'].includes(activeTab));
+      const isComprasGroup = item.id === 'compras';
+      const isComprasExpanded = isComprasGroup && comprasChildren.includes(activeTab);
+      const isActive = activeTab === item.id || (isMarketingGroup && ['gestao_anuncios', 'gestao_kanban', 'oportunidades', 'aguamarinha', 'padrao_sniff'].includes(activeTab)) || (isComprasGroup && comprasChildren.includes(activeTab));
 
       return (
         <div key={item.id} className="relative">
@@ -1383,6 +1390,9 @@ const App = () => {
             {isMarketingGroup && isSidebarOpen && (
               <ChevronDown size={14} className={`transition-transform duration-200 ${isMarketingExpanded ? 'rotate-0' : '-rotate-90'}`} />
             )}
+            {isComprasGroup && isSidebarOpen && (
+              <ChevronDown size={14} className={`transition-transform duration-200 ${isComprasExpanded ? 'rotate-0' : '-rotate-90'}`} />
+            )}
           </button>
           {isMarketingGroup && isMarketingExpanded && isSidebarOpen && (
             <div className="ml-6 mt-1 space-y-0.5 border-l-2 border-purple-400/20 pl-3">
@@ -1393,6 +1403,24 @@ const App = () => {
                 { id: 'oportunidades', label: 'Oportunidades' },
                 { id: 'aguamarinha', label: 'Agua Marinha' },
                 { id: 'padrao_sniff', label: 'Padrao Sniff' },
+              ].map(sub => (
+                <button key={sub.id}
+                  onClick={() => setActiveTab(sub.id)}
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-xs transition-all duration-200 ${
+                    activeTab === sub.id
+                    ? 'bg-[#F4B942]/20 text-[#F4B942] font-semibold'
+                    : 'text-purple-300 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  {sub.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {isComprasGroup && isComprasExpanded && isSidebarOpen && (
+            <div className="ml-6 mt-1 space-y-0.5 border-l-2 border-purple-400/20 pl-3">
+              {[
+                { id: 'compras', label: 'Pedidos Fornecedor' },
               ].map(sub => (
                 <button key={sub.id}
                   onClick={() => setActiveTab(sub.id)}
@@ -7059,426 +7087,6 @@ const App = () => {
     );
   };
 
-  // 7c. Gestao de Produtos Parados - Kanban View
-  const GestaoKanbanView = () => {
-    const [products, setProducts] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [showForm, setShowForm] = useState(false);
-    const [editingProduct, setEditingProduct] = useState(null);
-    const [draggedItem, setDraggedItem] = useState(null);
-    const [dragOverColumn, setDragOverColumn] = useState(null);
-    const emptyForm = { sku: '', produto: '', giro_mensal: '', estoque_atual: '', data_compra: '', projecao_vendas_meses: '', estrategia: '', acao: '', semana_1: '', semana_2: '', semana_3: '', semana_4: '', responsavel: '', status: 'parado', observacoes: '' };
-    const [formData, setFormData] = useState({ ...emptyForm });
-
-    const columns = [
-      { id: 'parado', label: 'Produtos Parados', headerBg: 'bg-red-500', bgColor: 'bg-red-50', borderColor: 'border-red-400', textColor: 'text-red-700', icon: AlertCircle, desc: 'Sem vendas 30-90 dias | < 50 un' },
-      { id: 'analise_mercado', label: 'Analise Mercado', headerBg: 'bg-blue-500', bgColor: 'bg-blue-50', borderColor: 'border-blue-400', textColor: 'text-blue-700', icon: Search, desc: 'Performance nos marketplaces' },
-      { id: 'padrao_sniff', label: 'Padrao Sniff', headerBg: 'bg-purple-500', bgColor: 'bg-purple-50', borderColor: 'border-purple-400', textColor: 'text-purple-700', icon: ShieldCheck, desc: 'Re-analise e reformulacao' },
-      { id: 'queima_reintroducao', label: 'Queima / Reintro', headerBg: 'bg-orange-500', bgColor: 'bg-orange-50', borderColor: 'border-orange-400', textColor: 'text-orange-700', icon: AlertTriangle, desc: 'Decidir destino do produto' },
-      { id: 'acao', label: 'Acao', headerBg: 'bg-indigo-500', bgColor: 'bg-indigo-50', borderColor: 'border-indigo-400', textColor: 'text-indigo-700', icon: Send, desc: 'Executando estrategia' },
-      { id: 'acompanhamento', label: 'Acompanhamento', headerBg: 'bg-cyan-500', bgColor: 'bg-cyan-50', borderColor: 'border-cyan-400', textColor: 'text-cyan-700', icon: Eye, desc: 'Monitorando acoes' },
-      { id: 'performance', label: 'Performance', headerBg: 'bg-teal-500', bgColor: 'bg-teal-50', borderColor: 'border-teal-400', textColor: 'text-teal-700', icon: BarChart3, desc: 'Semanas 1, 2, 3, 4' },
-      { id: 'resultado', label: 'Resultado', headerBg: 'bg-emerald-500', bgColor: 'bg-emerald-50', borderColor: 'border-emerald-400', textColor: 'text-emerald-700', icon: Award, desc: 'Vendas e retorno financeiro' },
-    ];
-
-    const getKanbanColumn = (status) => {
-      if (status === 'em_analise') return 'parado';
-      if (status === 'em_acao') return 'acao';
-      if (status === 'resolvido') return 'resultado';
-      return columns.find(c => c.id === status) ? status : 'parado';
-    };
-
-    useEffect(() => { loadData(); }, []);
-    const loadData = async () => {
-      setLoading(true);
-      try {
-        const { data } = await supabase.from('gestao_produtos_parados').select('*').order('created_at', { ascending: false });
-        if (data) setProducts(data);
-      } catch (err) { console.error('Kanban fetch error:', err); }
-      setLoading(false);
-    };
-
-    const grouped = useMemo(() => {
-      const g = {};
-      columns.forEach(col => { g[col.id] = []; });
-      products.forEach(p => {
-        const col = getKanbanColumn(p.status);
-        if (g[col]) g[col].push(p);
-      });
-      return g;
-    }, [products]);
-
-    const stats = {
-      total: products.length,
-      em_analise: products.filter(p => ['parado', 'analise_mercado', 'padrao_sniff', 'em_analise'].includes(p.status)).length,
-      em_acao: products.filter(p => ['queima_reintroducao', 'acao', 'acompanhamento', 'performance', 'em_acao'].includes(p.status)).length,
-      resolvido: products.filter(p => ['resultado', 'resolvido'].includes(p.status)).length,
-    };
-
-    const handleDragStart = (e, product) => {
-      setDraggedItem(product);
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', product.id);
-    };
-    const handleDragOver = (e, colId) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      setDragOverColumn(colId);
-    };
-    const handleDragLeave = () => { setDragOverColumn(null); };
-    const handleDrop = async (e, colId) => {
-      e.preventDefault();
-      setDragOverColumn(null);
-      if (!draggedItem || getKanbanColumn(draggedItem.status) === colId) { setDraggedItem(null); return; }
-      try {
-        const { data } = await supabase.from('gestao_produtos_parados').update({ status: colId, updated_at: new Date().toISOString() }).eq('id', draggedItem.id).select();
-        if (data) setProducts(prev => prev.map(p => p.id === draggedItem.id ? data[0] : p));
-      } catch (err) { console.error('Drag update error:', err); }
-      setDraggedItem(null);
-    };
-
-    const handleSave = async () => {
-      const payload = {
-        sku: formData.sku,
-        produto: formData.produto,
-        giro_mensal: Number(formData.giro_mensal) || 0,
-        estoque_atual: Number(formData.estoque_atual) || 0,
-        data_compra: formData.data_compra || null,
-        projecao_vendas_meses: Number(formData.projecao_vendas_meses) || null,
-        estrategia: formData.estrategia || null,
-        acao: formData.acao || null,
-        semana_1: formData.semana_1 || null,
-        semana_2: formData.semana_2 || null,
-        semana_3: formData.semana_3 || null,
-        semana_4: formData.semana_4 || null,
-        responsavel: formData.responsavel || null,
-        status: formData.status,
-        observacoes: formData.observacoes || null,
-        updated_at: new Date().toISOString()
-      };
-      try {
-        if (editingProduct) {
-          const { data } = await supabase.from('gestao_produtos_parados').update(payload).eq('id', editingProduct.id).select();
-          if (data) setProducts(prev => prev.map(p => p.id === editingProduct.id ? data[0] : p));
-        } else {
-          const { data } = await supabase.from('gestao_produtos_parados').insert(payload).select();
-          if (data) setProducts(prev => [data[0], ...prev]);
-        }
-      } catch (err) { console.error('Kanban save error:', err); }
-      setShowForm(false);
-      setEditingProduct(null);
-      setFormData({ ...emptyForm });
-    };
-
-    const handleEdit = (product) => {
-      setEditingProduct(product);
-      setFormData({
-        sku: product.sku || '',
-        produto: product.produto || '',
-        giro_mensal: product.giro_mensal || '',
-        estoque_atual: product.estoque_atual || '',
-        data_compra: product.data_compra || '',
-        projecao_vendas_meses: product.projecao_vendas_meses || '',
-        estrategia: product.estrategia || '',
-        acao: product.acao || '',
-        semana_1: product.semana_1 || '',
-        semana_2: product.semana_2 || '',
-        semana_3: product.semana_3 || '',
-        semana_4: product.semana_4 || '',
-        responsavel: product.responsavel || '',
-        status: getKanbanColumn(product.status),
-        observacoes: product.observacoes || ''
-      });
-      setShowForm(true);
-    };
-
-    const handleDelete = async (id) => {
-      if (!confirm('Remover este produto do kanban?')) return;
-      await supabase.from('gestao_produtos_parados').delete().eq('id', id);
-      setProducts(prev => prev.filter(p => p.id !== id));
-    };
-
-    return (
-      <div className="space-y-4">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-800">Kanban - Produtos Parados</h2>
-            <p className="text-sm text-gray-500 mt-1">Gestao visual do fluxo de produtos com baixo giro ou parados</p>
-          </div>
-          <button onClick={() => { setEditingProduct(null); setFormData({ ...emptyForm }); setShowForm(true); }} className="flex items-center gap-2 px-4 py-2 bg-[#6B1B8E] text-white rounded-lg hover:bg-[#5a1678]">
-            <Plus size={16} /> Adicionar Produto
-          </button>
-        </div>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="p-3 rounded-xl border border-gray-200 bg-white shadow-sm">
-            <p className="text-2xl font-bold text-gray-800">{stats.total}</p>
-            <p className="text-xs text-gray-500">Total Parados / Baixo Giro</p>
-          </div>
-          <div className="p-3 rounded-xl border border-yellow-200 bg-yellow-50 shadow-sm">
-            <p className="text-2xl font-bold text-yellow-600">{stats.em_analise}</p>
-            <p className="text-xs text-gray-500">Em Analise</p>
-          </div>
-          <div className="p-3 rounded-xl border border-blue-200 bg-blue-50 shadow-sm">
-            <p className="text-2xl font-bold text-blue-600">{stats.em_acao}</p>
-            <p className="text-xs text-gray-500">Em Acao</p>
-          </div>
-          <div className="p-3 rounded-xl border border-green-200 bg-green-50 shadow-sm">
-            <p className="text-2xl font-bold text-green-600">{stats.resolvido}</p>
-            <p className="text-xs text-gray-500">Resolvidos</p>
-          </div>
-        </div>
-
-        {/* Kanban Board */}
-        {loading ? (
-          <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-[#6B1B8E] border-t-transparent rounded-full animate-spin" /></div>
-        ) : (
-          <div className="overflow-x-auto pb-4 -mx-2 px-2">
-            <div className="flex gap-3" style={{ minWidth: columns.length * 250 }}>
-              {columns.map(col => {
-                const items = grouped[col.id] || [];
-                const ColIcon = col.icon;
-                const isDropTarget = dragOverColumn === col.id;
-                return (
-                  <div key={col.id}
-                    className={`flex-1 min-w-[230px] max-w-[280px] rounded-xl border-2 transition-all duration-200 ${isDropTarget ? `${col.borderColor} shadow-lg scale-[1.02]` : 'border-gray-200'} bg-gray-50/50`}
-                    onDragOver={(e) => handleDragOver(e, col.id)}
-                    onDragLeave={handleDragLeave}
-                    onDrop={(e) => handleDrop(e, col.id)}
-                  >
-                    {/* Column Header */}
-                    <div className={`${col.headerBg} text-white p-3 rounded-t-[10px]`}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <ColIcon size={15} />
-                          <span className="text-xs font-bold leading-tight">{col.label}</span>
-                        </div>
-                        <span className="bg-white/25 text-[10px] font-bold px-2 py-0.5 rounded-full min-w-[22px] text-center">{items.length}</span>
-                      </div>
-                      <p className="text-[10px] mt-1 opacity-80 leading-tight">{col.desc}</p>
-                    </div>
-
-                    {/* Column Body */}
-                    <div className="p-2 space-y-2 min-h-[200px] max-h-[60vh] overflow-y-auto">
-                      {items.length === 0 ? (
-                        <div className="text-center py-10 text-gray-300">
-                          <ColIcon size={28} className="mx-auto mb-2 opacity-40" />
-                          <p className="text-[10px]">Arraste cards aqui</p>
-                        </div>
-                      ) : items.map(item => {
-                        const estoque = Number(item.estoque_atual) || 0;
-                        const giro = Number(item.giro_mensal) || 0;
-                        const projecao = giro > 0 ? Math.round(estoque / giro * 10) / 10 : 0;
-                        const vendaSemanas = [item.semana_1, item.semana_2, item.semana_3, item.semana_4].map(s => Number(s) || 0);
-                        const totalVendido = vendaSemanas.reduce((a, b) => a + b, 0);
-                        const semanasPreenchidas = vendaSemanas.filter(v => v > 0).length;
-
-                        return (
-                          <div key={item.id}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, item)}
-                            className={`bg-white rounded-lg border border-gray-100 p-2.5 cursor-grab active:cursor-grabbing hover:shadow-md transition-all duration-150 ${draggedItem?.id === item.id ? 'opacity-40 scale-95' : ''}`}
-                          >
-                            {/* Card Header */}
-                            <div className="flex items-start justify-between mb-1.5">
-                              <span className="font-mono text-[11px] font-bold text-[#6B1B8E] bg-purple-50 px-2 py-0.5 rounded">{item.sku}</span>
-                              <div className="flex gap-0.5">
-                                <button onClick={() => handleEdit(item)} className="p-1 text-blue-400 hover:bg-blue-50 rounded" title="Editar"><Edit2 size={11} /></button>
-                                <button onClick={() => handleDelete(item.id)} className="p-1 text-red-300 hover:bg-red-50 rounded" title="Remover"><Trash2 size={11} /></button>
-                              </div>
-                            </div>
-
-                            {/* Product Name */}
-                            {item.produto && <p className="text-[11px] font-medium text-gray-700 mb-1.5 leading-tight line-clamp-2">{item.produto}</p>}
-
-                            {/* Metrics Row */}
-                            <div className="grid grid-cols-2 gap-1 text-[10px] mb-1.5">
-                              <div className="bg-gray-50 rounded px-1.5 py-1">
-                                <span className="text-gray-400 block">Estoque</span>
-                                <span className={`font-bold ${estoque < 50 ? 'text-red-600' : 'text-gray-700'}`}>{estoque} un</span>
-                              </div>
-                              <div className="bg-gray-50 rounded px-1.5 py-1">
-                                <span className="text-gray-400 block">Giro</span>
-                                <span className="font-bold text-gray-700">{giro} /mes</span>
-                              </div>
-                            </div>
-
-                            {/* Projecao */}
-                            {projecao > 0 && (
-                              <div className={`text-[10px] font-bold px-2 py-1 rounded text-center mb-1.5 ${projecao > 12 ? 'bg-red-50 text-red-600' : projecao > 6 ? 'bg-yellow-50 text-yellow-600' : 'bg-green-50 text-green-600'}`}>
-                                {projecao} meses para zerar
-                              </div>
-                            )}
-
-                            {/* Estrategia Badge */}
-                            {item.estrategia && (
-                              <div className={`text-[10px] font-medium px-2 py-0.5 rounded-full text-center mb-1.5 ${item.estrategia === 'queima' ? 'bg-red-100 text-red-700' : 'bg-teal-100 text-teal-700'}`}>
-                                {item.estrategia === 'queima' ? 'Queima' : 'Reintroducao'}
-                              </div>
-                            )}
-
-                            {/* Weekly Performance Mini-bars */}
-                            {totalVendido > 0 && (
-                              <div className="mb-1.5">
-                                <div className="grid grid-cols-4 gap-0.5">
-                                  {vendaSemanas.map((v, i) => (
-                                    <div key={i} className={`text-center rounded py-0.5 text-[9px] ${v > 0 ? 'bg-green-100 text-green-700 font-bold' : 'bg-gray-50 text-gray-300'}`}>
-                                      S{i + 1}: {v}
-                                    </div>
-                                  ))}
-                                </div>
-                                <p className="text-[9px] text-green-600 font-semibold mt-0.5 text-center">{totalVendido} vendidos em {semanasPreenchidas}sem</p>
-                              </div>
-                            )}
-
-                            {/* Acao */}
-                            {item.acao && (
-                              <div className="text-[10px] text-blue-600 bg-blue-50 rounded px-2 py-1 mb-1.5 line-clamp-2 leading-tight">{item.acao}</div>
-                            )}
-
-                            {/* Responsavel */}
-                            {item.responsavel && (
-                              <div className="flex items-center gap-1 text-[10px] text-gray-400">
-                                <UserCheck size={10} /> {item.responsavel}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Add/Edit Form Modal */}
-        {showForm && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-                <h3 className="text-lg font-bold text-gray-800">{editingProduct ? 'Editar Produto' : 'Adicionar Produto ao Kanban'}</h3>
-                <button onClick={() => { setShowForm(false); setEditingProduct(null); }} className="p-2 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
-              </div>
-              <div className="p-6 space-y-4">
-                {/* Etapa do Kanban */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Etapa no Kanban *</label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {columns.map(col => {
-                      const ColIcon = col.icon;
-                      const isSelected = formData.status === col.id;
-                      return (
-                        <button key={col.id} type="button" onClick={() => setFormData({ ...formData, status: col.id })}
-                          className={`p-2 rounded-lg border-2 text-center transition-all text-[11px] ${isSelected ? `${col.borderColor} ${col.bgColor} ${col.textColor} font-bold shadow-sm` : 'border-gray-200 text-gray-400 hover:border-gray-300'}`}>
-                          <ColIcon size={14} className="mx-auto mb-0.5" />
-                          <p className="leading-tight">{col.label}</p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">SKU *</label>
-                    <input type="text" value={formData.sku} onChange={e => setFormData({ ...formData, sku: e.target.value })} placeholder="Ex: GL7309" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Produto</label>
-                    <input type="text" value={formData.produto} onChange={e => setFormData({ ...formData, produto: e.target.value })} placeholder="Nome do produto" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Estoque Atual (un)</label>
-                    <input type="number" value={formData.estoque_atual} onChange={e => setFormData({ ...formData, estoque_atual: e.target.value })} placeholder="180" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Giro Mensal (un)</label>
-                    <input type="number" value={formData.giro_mensal} onChange={e => setFormData({ ...formData, giro_mensal: e.target.value })} placeholder="6" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Data Compra</label>
-                    <input type="date" value={formData.data_compra} onChange={e => setFormData({ ...formData, data_compra: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Estrategia</label>
-                  <div className="flex gap-3">
-                    <button type="button" onClick={() => setFormData({ ...formData, estrategia: formData.estrategia === 'queima' ? '' : 'queima' })} className={`flex-1 px-4 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${formData.estrategia === 'queima' ? 'border-red-400 bg-red-50 text-red-700' : 'border-gray-200 text-gray-400 hover:border-gray-300'}`}>
-                      Queima
-                    </button>
-                    <button type="button" onClick={() => setFormData({ ...formData, estrategia: formData.estrategia === 'reintroducao' ? '' : 'reintroducao' })} className={`flex-1 px-4 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${formData.estrategia === 'reintroducao' ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-gray-200 text-gray-400 hover:border-gray-300'}`}>
-                      Reintroducao
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Acao</label>
-                  <textarea value={formData.acao} onChange={e => setFormData({ ...formData, acao: e.target.value })} rows={2} placeholder="Ex: Enviado ao FULL, catalogo ML, campanha ads, clips..." className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Acompanhamento Semanal (qtd vendida)</label>
-                  <div className="grid grid-cols-4 gap-3">
-                    {[1, 2, 3, 4].map(n => (
-                      <div key={n}>
-                        <label className="block text-xs text-gray-500 mb-1">Semana {n}</label>
-                        <input type="number" min="0" value={formData[`semana_${n}`]} onChange={e => setFormData({ ...formData, [`semana_${n}`]: e.target.value })} placeholder="0" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-center focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
-                      </div>
-                    ))}
-                  </div>
-                  {(() => {
-                    const sv = [1,2,3,4].map(n => Number(formData[`semana_${n}`]) || 0);
-                    const tot = sv.reduce((a,b) => a+b, 0);
-                    const weeks = sv.filter(v => v > 0).length;
-                    const est = (Number(formData.estoque_atual) || 0) - tot;
-                    const giroS = weeks > 0 ? tot / weeks : 0;
-                    const giroM = weeks > 0 ? Math.round(giroS * 4 * 10) / 10 : Number(formData.giro_mensal) || 0;
-                    const proj = giroM > 0 ? Math.round(est / giroM * 10) / 10 : 0;
-                    return tot > 0 ? (
-                      <div className="mt-2 p-3 bg-green-50 rounded-lg border border-green-200 text-sm">
-                        <div className="flex items-center justify-between">
-                          <span className="text-green-700 font-semibold">Vendido: {tot} un em {weeks} semana{weeks > 1 ? 's' : ''}</span>
-                          <span className="text-green-600">Estoque ajustado: {est} un</span>
-                        </div>
-                        <div className="flex items-center justify-between mt-1">
-                          <span className="text-gray-600">Novo giro: {giroM} un/mes</span>
-                          <span className={`font-bold ${proj > 12 ? 'text-red-600' : proj > 6 ? 'text-yellow-600' : 'text-green-600'}`}>Projecao: {proj > 0 ? `${proj} meses` : '-'}</span>
-                        </div>
-                      </div>
-                    ) : null;
-                  })()}
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Responsavel</label>
-                    <input type="text" value={formData.responsavel} onChange={e => setFormData({ ...formData, responsavel: e.target.value })} placeholder="Nome do responsavel" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Observacoes</label>
-                    <input type="text" value={formData.observacoes} onChange={e => setFormData({ ...formData, observacoes: e.target.value })} placeholder="Notas adicionais" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#6B1B8E]/20 focus:border-[#6B1B8E]" />
-                  </div>
-                </div>
-              </div>
-              <div className="p-6 border-t border-gray-100 flex justify-end gap-3">
-                <button onClick={() => { setShowForm(false); setEditingProduct(null); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
-                <button onClick={handleSave} disabled={!formData.sku} className="px-6 py-2 bg-[#6B1B8E] text-white rounded-lg hover:bg-[#5a1678] font-medium disabled:opacity-50 disabled:cursor-not-allowed">Salvar</button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
 
   // 8. Fulfillment View
   const FulfillmentView = () => {
@@ -8877,7 +8485,8 @@ const App = () => {
       case 'vendedor': return <VendedorView />;
       case 'analytics': return <AnalyticsView />;
       case 'times': return <TimesView />;
-      case 'pedidos': return <PedidoFornecedorView />;
+      case 'compras': return <PedidoFornecedorView />;
+      case 'pedidos_fornecedor': return <PedidoFornecedorView />;
       case 'marketing': return <MarketingView />;
       case 'gestao_anuncios': return <GestaoAnunciosView />;
       case 'gestao_kanban': return <GestaoKanbanView />;
@@ -8939,7 +8548,7 @@ const App = () => {
             >
               <Menu size={24} />
             </button>
-            <h1 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('aguamarinha', 'Agua Marinha').replace('gestao_anuncios', 'Gestao de Produtos Parados').replace('gestao_kanban', 'Kanban - Produtos Parados').replace('oportunidades', 'Oportunidades').replace('analisevendas', 'Analise de Vendas').replace('integracoes', 'Integracoes')}</h1>
+            <h1 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('aguamarinha', 'Agua Marinha').replace('gestao_anuncios', 'Gestao de Produtos Parados').replace('gestao_kanban', 'Kanban - Produtos Parados').replace('oportunidades', 'Oportunidades').replace('analisevendas', 'Analise de Vendas').replace('integracoes', 'Integracoes').replace('compras', 'Compras').replace('pedidos_fornecedor', 'Pedidos Fornecedor')}</h1>
           </div>
 
           <div className="flex items-center gap-6">
