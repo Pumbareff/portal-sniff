@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Calendar, Clock, Target, TrendingUp, Star, Gift, ShoppingCart, Heart,
   Zap, Tag, Filter, Check, ChevronRight, AlertCircle, Award, Eye,
-  Package, ChevronDown, X, CheckCircle2
+  Package, ChevronDown, X, CheckCircle2, Edit2, Trash2, Plus
 } from 'lucide-react';
 
 const PURPLE = '#6B1B8E';
@@ -101,6 +101,11 @@ const parseDate = (dateStr) => {
   return new Date(y, m - 1, d);
 };
 
+const EMPTY_EVENT_FORM = {
+  name: '', date: '', category: 'comemorativo', importance: 3,
+  description: '', tips: '', prepDays: 14,
+};
+
 const MarketingHubView = () => {
   const today = useMemo(() => new Date(), []);
   const currentYear = 2026;
@@ -114,18 +119,75 @@ const MarketingHubView = () => {
     } catch { return {}; }
   });
 
+  // Editable events state (persisted in localStorage)
+  const [events, setEvents] = useState(() => {
+    try {
+      const saved = localStorage.getItem('portal-sniff-calendar-events');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return ECOMMERCE_EVENTS_2026;
+  });
+  const [showEventForm, setShowEventForm] = useState(false);
+  const [editingEvent, setEditingEvent] = useState(null);
+  const [eventForm, setEventForm] = useState({ ...EMPTY_EVENT_FORM });
+  const [confirmDeleteEvent, setConfirmDeleteEvent] = useState(null);
+
   useEffect(() => {
     localStorage.setItem('portal-sniff-planned-events', JSON.stringify(plannedEvents));
   }, [plannedEvents]);
+
+  useEffect(() => {
+    localStorage.setItem('portal-sniff-calendar-events', JSON.stringify(events));
+  }, [events]);
 
   const togglePlanned = useCallback((eventId) => {
     setPlannedEvents(prev => ({ ...prev, [eventId]: !prev[eventId] }));
   }, []);
 
+  const handleOpenEventForm = useCallback((event = null) => {
+    if (event) {
+      setEditingEvent(event.id);
+      setEventForm({
+        name: event.name, date: event.date, category: event.category,
+        importance: event.importance, description: event.description || '',
+        tips: event.tips || '', prepDays: event.prepDays || 14,
+      });
+    } else {
+      setEditingEvent(null);
+      setEventForm({ ...EMPTY_EVENT_FORM });
+    }
+    setShowEventForm(true);
+  }, []);
+
+  const handleSaveEvent = useCallback(() => {
+    if (!eventForm.name || !eventForm.date) return;
+    setEvents(prev => {
+      if (editingEvent !== null) {
+        return prev.map(e => e.id === editingEvent ? { ...e, ...eventForm } : e);
+      }
+      const newId = Math.max(0, ...prev.map(e => e.id)) + 1;
+      return [...prev, { id: newId, ...eventForm }];
+    });
+    setShowEventForm(false);
+    setEditingEvent(null);
+    setEventForm({ ...EMPTY_EVENT_FORM });
+  }, [eventForm, editingEvent]);
+
+  const handleDeleteEvent = useCallback((id) => {
+    setEvents(prev => prev.filter(e => e.id !== id));
+    setConfirmDeleteEvent(null);
+    setSelectedEvent(null);
+  }, []);
+
+  const handleResetDefaults = useCallback(() => {
+    setEvents(ECOMMERCE_EVENTS_2026);
+    localStorage.removeItem('portal-sniff-calendar-events');
+  }, []);
+
   const filteredEvents = useMemo(() => {
-    if (activeFilter === 'all') return ECOMMERCE_EVENTS_2026;
-    return ECOMMERCE_EVENTS_2026.filter(e => e.category === activeFilter);
-  }, [activeFilter]);
+    if (activeFilter === 'all') return events;
+    return events.filter(e => e.category === activeFilter);
+  }, [activeFilter, events]);
 
   const monthEvents = useMemo(() => {
     return filteredEvents.filter(e => {
@@ -136,10 +198,10 @@ const MarketingHubView = () => {
 
   const nextEvent = useMemo(() => {
     const now = today.getTime();
-    return ECOMMERCE_EVENTS_2026
+    return events
       .filter(e => parseDate(e.date).getTime() >= now)
       .sort((a, b) => parseDate(a.date).getTime() - parseDate(b.date).getTime())[0] || null;
-  }, [today]);
+  }, [today, events]);
 
   const daysUntilNext = useMemo(() => {
     if (!nextEvent) return 0;
@@ -148,15 +210,15 @@ const MarketingHubView = () => {
   }, [nextEvent, today]);
 
   const stats = useMemo(() => {
-    const total = ECOMMERCE_EVENTS_2026.length;
+    const total = events.length;
     const planned = Object.values(plannedEvents).filter(Boolean).length;
-    const critical = ECOMMERCE_EVENTS_2026.filter(e => e.importance >= 4).length;
-    const next30 = ECOMMERCE_EVENTS_2026.filter(e => {
+    const critical = events.filter(e => e.importance >= 4).length;
+    const next30 = events.filter(e => {
       const diff = (parseDate(e.date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
       return diff >= 0 && diff <= 30;
     }).length;
     return { total, planned, critical, next30 };
-  }, [plannedEvents, today]);
+  }, [plannedEvents, today, events]);
 
   const getEventsForDay = useCallback((month, day) => {
     return filteredEvents.filter(e => {
@@ -284,7 +346,7 @@ const MarketingHubView = () => {
               <ImportanceStars level={event.importance} />
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-1.5 flex-shrink-0">
             {!isPast && (
               <span className={`text-xs font-bold px-2 py-1 rounded-lg ${
                 daysUntil <= 7 ? 'bg-red-100 text-red-700' : daysUntil <= 30 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
@@ -297,8 +359,23 @@ const MarketingHubView = () => {
               className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
                 isPlanned ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400 hover:bg-purple-100 hover:text-purple-600'
               }`}
+              title={isPlanned ? 'Planejado' : 'Marcar como planejado'}
             >
               {isPlanned ? <CheckCircle2 size={14} /> : <Check size={14} />}
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleOpenEventForm(event); }}
+              className="w-7 h-7 rounded-lg flex items-center justify-center bg-gray-100 text-gray-400 hover:bg-blue-100 hover:text-blue-600 transition-all"
+              title="Editar"
+            >
+              <Edit2 size={13} />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setConfirmDeleteEvent(event); }}
+              className="w-7 h-7 rounded-lg flex items-center justify-center bg-gray-100 text-gray-400 hover:bg-red-100 hover:text-red-600 transition-all"
+              title="Excluir"
+            >
+              <Trash2 size={13} />
             </button>
           </div>
         </div>
@@ -324,6 +401,20 @@ const MarketingHubView = () => {
           <p className="text-sm text-gray-500 mt-1">Planeje suas campanhas nas datas mais importantes do ano</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleResetDefaults}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-500 hover:bg-gray-200 transition-all"
+            title="Restaurar datas padrao"
+          >
+            Restaurar
+          </button>
+          <button
+            onClick={() => handleOpenEventForm()}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-all flex items-center gap-1.5"
+          >
+            <Plus size={14} /> Nova Data
+          </button>
+          <div className="w-px h-6 bg-gray-200" />
           <button
             onClick={() => setViewMode('calendar')}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${viewMode === 'calendar' ? 'bg-[#6B1B8E] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
@@ -611,6 +702,20 @@ const MarketingHubView = () => {
                           >
                             {isPlanned ? <CheckCircle2 size={14} /> : <Check size={14} />}
                           </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleOpenEventForm(event); }}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center bg-gray-100 text-gray-400 hover:bg-blue-100 hover:text-blue-600 transition-all"
+                            title="Editar"
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setConfirmDeleteEvent(event); }}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center bg-gray-100 text-gray-400 hover:bg-red-100 hover:text-red-600 transition-all"
+                            title="Excluir"
+                          >
+                            <Trash2 size={13} />
+                          </button>
                         </div>
                       </div>
                     </React.Fragment>
@@ -636,6 +741,157 @@ const MarketingHubView = () => {
           <Zap size={12} className="text-yellow-500 fill-yellow-500" /> Evento Critico
         </span>
       </div>
+
+      {/* Event Form Modal */}
+      {showEventForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowEventForm(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b">
+              <h3 className="text-lg font-bold text-gray-800">
+                {editingEvent !== null ? 'Editar Data' : 'Nova Data'}
+              </h3>
+              <button onClick={() => setShowEventForm(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 text-gray-400">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Evento *</label>
+                <input
+                  type="text"
+                  value={eventForm.name}
+                  onChange={e => setEventForm(f => ({ ...f, name: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none"
+                  placeholder="Ex: Black Friday"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Data *</label>
+                  <input
+                    type="date"
+                    value={eventForm.date}
+                    onChange={e => setEventForm(f => ({ ...f, date: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
+                  <select
+                    value={eventForm.category}
+                    onChange={e => setEventForm(f => ({ ...f, category: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none"
+                  >
+                    {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => (
+                      <option key={key} value={key}>{cfg.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Importancia (1-5)</label>
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map(level => (
+                      <button
+                        key={level}
+                        onClick={() => setEventForm(f => ({ ...f, importance: level }))}
+                        className={`w-9 h-9 rounded-lg text-sm font-bold transition-all ${
+                          eventForm.importance >= level
+                            ? 'bg-yellow-100 text-yellow-600 border-2 border-yellow-300'
+                            : 'bg-gray-50 text-gray-400 border border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        {level}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Dias p/ Preparacao</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={90}
+                    value={eventForm.prepDays}
+                    onChange={e => setEventForm(f => ({ ...f, prepDays: parseInt(e.target.value) || 14 }))}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Descricao</label>
+                <textarea
+                  value={eventForm.description}
+                  onChange={e => setEventForm(f => ({ ...f, description: e.target.value }))}
+                  rows={2}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none resize-none"
+                  placeholder="Descricao do evento..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Dicas</label>
+                <textarea
+                  value={eventForm.tips}
+                  onChange={e => setEventForm(f => ({ ...f, tips: e.target.value }))}
+                  rows={2}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none resize-none"
+                  placeholder="Dicas e estrategias..."
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 p-5 border-t bg-gray-50 rounded-b-2xl">
+              <button
+                onClick={() => setShowEventForm(false)}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-200 transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveEvent}
+                disabled={!eventForm.name || !eventForm.date}
+                className="px-5 py-2 rounded-lg text-sm font-medium bg-[#6B1B8E] text-white hover:bg-[#5a1678] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {editingEvent !== null ? 'Salvar' : 'Adicionar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {confirmDeleteEvent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmDeleteEvent(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <div className="p-6 text-center">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={20} className="text-red-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-800 mb-2">Excluir Data?</h3>
+              <p className="text-sm text-gray-500 mb-1">
+                <strong>{confirmDeleteEvent.name}</strong>
+              </p>
+              <p className="text-xs text-gray-400">
+                {parseDate(confirmDeleteEvent.date).toLocaleDateString('pt-BR')}
+              </p>
+            </div>
+            <div className="flex border-t">
+              <button
+                onClick={() => setConfirmDeleteEvent(null)}
+                className="flex-1 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-all rounded-bl-2xl"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleDeleteEvent(confirmDeleteEvent.id)}
+                className="flex-1 py-3 text-sm font-medium text-red-600 hover:bg-red-50 transition-all rounded-br-2xl border-l"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
