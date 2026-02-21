@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import DefesaCatalogo from './components/defesa/DefesaCatalogo';
 import MarketingHubView from './components/marketing/MarketingHubView';
+import ControlePagamentosView from './components/compras/ControlePagamentosView';
 import GestaoKanbanView from './components/kanban/GestaoKanbanView';
 import {
   LayoutDashboard,
@@ -325,7 +326,7 @@ const App = () => {
     localStorage.setItem('portal-sniff-tab', activeTab);
   }, [activeTab]);
   useEffect(() => {
-    if (profile?.role === 'fornecedor' && !['compras', 'pedidos_fornecedor'].includes(activeTab)) {
+    if (profile?.role === 'fornecedor' && !['compras', 'controle_pagamentos'].includes(activeTab)) {
       setActiveTab('compras');
     }
   }, [profile]);
@@ -1357,7 +1358,7 @@ const App = () => {
     ];
 
     const marketingChildren = ['marketing', 'produtos_comprados', 'gestao_anuncios', 'gestao_kanban', 'oportunidades', 'aguamarinha', 'padrao_sniff'];
-    const comprasChildren = ['compras', 'pedidos_fornecedor'];
+    const comprasChildren = ['compras', 'controle_pagamentos'];
 
     const renderNavItem = (item) => {
       const isMarketingGroup = item.id === 'marketing';
@@ -1423,6 +1424,7 @@ const App = () => {
             <div className="ml-6 mt-1 space-y-0.5 border-l-2 border-purple-400/20 pl-3">
               {[
                 { id: 'compras', label: 'Pedidos Fornecedor' },
+                { id: 'controle_pagamentos', label: 'Controle Pagamentos' },
               ].map(sub => (
                 <button key={sub.id}
                   onClick={() => setActiveTab(sub.id)}
@@ -8478,7 +8480,7 @@ const App = () => {
       case 'analytics': return <AnalyticsView />;
       case 'times': return <TimesView />;
       case 'compras': return <PedidoFornecedorView />;
-      case 'pedidos_fornecedor': return <PedidoFornecedorView />;
+      case 'controle_pagamentos': return <ControlePagamentosView />;
       case 'marketing': return <MarketingHubView />;
       case 'produtos_comprados': return <MarketingView />;
       case 'gestao_anuncios': return <GestaoAnunciosView />;
@@ -8541,7 +8543,7 @@ const App = () => {
             >
               <Menu size={24} />
             </button>
-            <h1 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('aguamarinha', 'Agua Marinha').replace('gestao_anuncios', 'Gestao de Produtos Parados').replace('gestao_kanban', 'Kanban - Produtos Parados').replace('oportunidades', 'Oportunidades').replace('analisevendas', 'Analise de Vendas').replace('integracoes', 'Integracoes').replace('compras', 'Compras').replace('pedidos_fornecedor', 'Pedidos Fornecedor').replace('produtos_comprados', 'Produtos Comprados')}</h1>
+            <h1 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('aguamarinha', 'Agua Marinha').replace('gestao_anuncios', 'Gestao de Produtos Parados').replace('gestao_kanban', 'Kanban - Produtos Parados').replace('oportunidades', 'Oportunidades').replace('analisevendas', 'Analise de Vendas').replace('integracoes', 'Integracoes').replace('compras', 'Compras').replace('controle_pagamentos', 'Controle de Pagamentos').replace('produtos_comprados', 'Produtos Comprados')}</h1>
           </div>
 
           <div className="flex items-center gap-6">
