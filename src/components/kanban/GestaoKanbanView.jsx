@@ -46,6 +46,13 @@ export default function GestaoKanbanView() {
   const [editingProduct, setEditingProduct] = useState(null);
   const [draggedItem, setDraggedItem] = useState(null);
   const [dragOverCol, setDragOverCol] = useState(null);
+  const [showSync, setShowSync] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncCandidates, setSyncCandidates] = useState([]);
+  const [selectedSkus, setSelectedSkus] = useState(new Set());
+  const [syncDays, setSyncDays] = useState(90);
+  const [syncMeta, setSyncMeta] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
 
   const empty = () => ({
     sku: '', produto: '', giro_mensal: '', estoque_atual: '', data_compra: '',
@@ -208,6 +215,80 @@ export default function GestaoKanbanView() {
         .eq('id', product.id).select();
       if (data) setProducts(ps => ps.map(p => p.id === product.id ? data[0] : p));
     } catch (e) { console.error('Toggle error:', e); }
+  };
+
+  // --- BaseLinker Sync ---
+  const existingSkus = useMemo(() => new Set(products.map(p => (p.sku || '').trim().toUpperCase())), [products]);
+
+  const runSync = async () => {
+    setSyncLoading(true);
+    setSyncCandidates([]);
+    setSelectedSkus(new Set());
+    setSyncMeta(null);
+    try {
+      const resp = await fetch(`/api/baselinker/stagnant-products?days=${syncDays}&max_stock=9999`);
+      const data = await resp.json();
+      if (data.success) {
+        setSyncCandidates(data.candidates || []);
+        setSyncMeta(data.meta || null);
+        // Auto-select candidates NOT already in kanban
+        const autoSelect = new Set();
+        (data.candidates || []).forEach(c => {
+          if (!existingSkus.has((c.sku || '').toUpperCase())) autoSelect.add(c.sku);
+        });
+        setSelectedSkus(autoSelect);
+      } else {
+        alert('Erro: ' + (data.error || 'Falha ao buscar dados'));
+      }
+    } catch (e) {
+      alert('Erro de conexao: ' + e.message);
+    }
+    setSyncLoading(false);
+  };
+
+  const toggleSku = (sku) => setSelectedSkus(prev => {
+    const next = new Set(prev);
+    next.has(sku) ? next.delete(sku) : next.add(sku);
+    return next;
+  });
+
+  const toggleAllNew = () => {
+    const newSkus = syncCandidates.filter(c => !existingSkus.has((c.sku || '').toUpperCase())).map(c => c.sku);
+    const allSelected = newSkus.every(s => selectedSkus.has(s));
+    setSelectedSkus(allSelected ? new Set() : new Set(newSkus));
+  };
+
+  const importSelected = async () => {
+    const toImport = syncCandidates.filter(c => selectedSkus.has(c.sku) && !existingSkus.has((c.sku || '').toUpperCase()));
+    if (toImport.length === 0) return;
+    setImportLoading(true);
+    try {
+      const rows = toImport.map(c => ({
+        sku: c.sku,
+        produto: c.name,
+        estoque_atual: c.stock,
+        giro_mensal: c.giroMensal,
+        status: 'parado',
+        metadata: {
+          skus_relacionados: c.relatedSkus.length > 0 ? c.relatedSkus.join(', ') : null,
+          data_inicio_analise: new Date().toISOString().split('T')[0],
+          timestamps: { parado: new Date().toISOString() },
+          source: 'baselinker_sync',
+          projecao_meses: c.projecaoMeses,
+          preco: c.price,
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }));
+      const { data, error } = await supabase.from('gestao_produtos_parados').insert(rows).select();
+      if (error) throw error;
+      if (data) setProducts(prev => [...data, ...prev]);
+      setShowSync(false);
+      setSyncCandidates([]);
+    } catch (e) {
+      alert('Erro ao importar: ' + e.message);
+    }
+    setImportLoading(false);
   };
 
   // --- Card Renderer ---
@@ -395,10 +476,16 @@ export default function GestaoKanbanView() {
           <h2 className="text-2xl font-bold text-gray-800">Kanban - Produtos Parados</h2>
           <p className="text-sm text-gray-500 mt-1">Gestao visual do fluxo de produtos com baixo giro ou parados</p>
         </div>
-        <button onClick={() => { setEditingProduct(null); setFormData(empty()); setShowForm(true); }}
-          className="flex items-center gap-2 px-4 py-2 bg-[#6B1B8E] text-white rounded-lg hover:bg-[#5a1678]">
-          <Plus size={16} /> Adicionar Produto
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => { setShowSync(true); setSyncCandidates([]); setSyncMeta(null); }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
+            <ArrowRight size={14} /> Sync BaseLinker
+          </button>
+          <button onClick={() => { setEditingProduct(null); setFormData(empty()); setShowForm(true); }}
+            className="flex items-center gap-2 px-4 py-2 bg-[#6B1B8E] text-white rounded-lg hover:bg-[#5a1678]">
+            <Plus size={16} /> Adicionar Produto
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -465,6 +552,125 @@ export default function GestaoKanbanView() {
       )}
 
       {/* ====================== FORM MODAL ====================== */}
+      {/* ====================== SYNC MODAL ====================== */}
+      {showSync && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">Sincronizar BaseLinker</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Busca produtos com baixo giro no inventario e cruza com pedidos</p>
+              </div>
+              <button onClick={() => setShowSync(false)} className="p-2 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
+            </div>
+
+            <div className="p-5 border-b border-gray-100 flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-semibold text-gray-600">Periodo:</label>
+                <select value={syncDays} onChange={e => setSyncDays(Number(e.target.value))}
+                  className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm">
+                  <option value={30}>30 dias</option>
+                  <option value={60}>60 dias</option>
+                  <option value={90}>90 dias</option>
+                </select>
+              </div>
+              <button onClick={runSync} disabled={syncLoading}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50">
+                {syncLoading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Search size={14} />}
+                {syncLoading ? 'Buscando...' : 'Buscar Produtos'}
+              </button>
+              {syncMeta && (
+                <div className="flex gap-3 text-[11px] text-gray-500 ml-auto">
+                  <span>{syncMeta.totalProducts} produtos</span>
+                  <span>{syncMeta.totalOrders} pedidos</span>
+                  <span className="font-bold text-blue-600">{syncMeta.totalCandidates} candidatos</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5">
+              {syncCandidates.length === 0 && !syncLoading && (
+                <div className="text-center py-16 text-gray-400">
+                  <Search size={40} className="mx-auto mb-3 opacity-30" />
+                  <p className="text-sm">Clique "Buscar Produtos" para analisar o inventario</p>
+                </div>
+              )}
+              {syncCandidates.length > 0 && (
+                <>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <button onClick={toggleAllNew} className="px-3 py-1 border border-gray-200 rounded text-xs hover:bg-gray-50">
+                        {syncCandidates.filter(c => !existingSkus.has((c.sku||'').toUpperCase())).every(c => selectedSkus.has(c.sku)) ? 'Desmarcar Todos' : 'Selecionar Todos Novos'}
+                      </button>
+                      <span className="text-xs text-gray-500">
+                        {selectedSkus.size} selecionados | {syncCandidates.filter(c => existingSkus.has((c.sku||'').toUpperCase())).length} ja no kanban
+                      </span>
+                    </div>
+                    <button onClick={importSelected}
+                      disabled={importLoading || selectedSkus.size === 0}
+                      className="flex items-center gap-2 px-5 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50">
+                      {importLoading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Plus size={14} />}
+                      Importar {selectedSkus.size} Produtos
+                    </button>
+                  </div>
+                  <div className="border border-gray-200 rounded-xl overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                        <tr>
+                          <th className="p-2 w-10"></th>
+                          <th className="p-2 text-left">SKU</th>
+                          <th className="p-2 text-left">Produto</th>
+                          <th className="p-2 text-right">Estoque</th>
+                          <th className="p-2 text-right">Vendidos ({syncDays}d)</th>
+                          <th className="p-2 text-right">Giro/mes</th>
+                          <th className="p-2 text-right">Projecao</th>
+                          <th className="p-2 text-left">SKUs Relacionados</th>
+                          <th className="p-2 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {syncCandidates.map(c => {
+                          const inKanban = existingSkus.has((c.sku || '').toUpperCase());
+                          const selected = selectedSkus.has(c.sku);
+                          return (
+                            <tr key={c.sku} className={`border-t border-gray-100 ${inKanban ? 'bg-gray-50 opacity-60' : selected ? 'bg-blue-50/50' : 'hover:bg-gray-50'}`}>
+                              <td className="p-2 text-center">
+                                {inKanban ? (
+                                  <CheckCircle2 size={14} className="text-green-400 mx-auto" />
+                                ) : (
+                                  <input type="checkbox" checked={selected} onChange={() => toggleSku(c.sku)}
+                                    className="w-4 h-4 text-blue-600 rounded" />
+                                )}
+                              </td>
+                              <td className="p-2 font-mono text-xs font-bold text-[#6B1B8E]">{c.sku}</td>
+                              <td className="p-2 text-xs text-gray-700 max-w-[200px] truncate">{c.name}</td>
+                              <td className={`p-2 text-right font-bold text-xs ${c.stock < 50 ? 'text-red-600' : 'text-gray-700'}`}>{c.stock}</td>
+                              <td className={`p-2 text-right text-xs font-medium ${c.unitsSold === 0 ? 'text-red-500' : 'text-green-600'}`}>{c.unitsSold}</td>
+                              <td className="p-2 text-right text-xs text-gray-600">{c.giroMensal}</td>
+                              <td className={`p-2 text-right text-xs font-bold ${c.projecaoMeses > 12 ? 'text-red-600' : c.projecaoMeses > 6 ? 'text-yellow-600' : 'text-green-600'}`}>
+                                {c.projecaoMeses >= 999 ? 'Nunca' : `${c.projecaoMeses}m`}
+                              </td>
+                              <td className="p-2 text-[10px] text-purple-500 max-w-[120px] truncate">{c.relatedSkus.join(', ')}</td>
+                              <td className="p-2 text-center">
+                                {inKanban ? (
+                                  <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">No Kanban</span>
+                                ) : (
+                                  <span className="text-[10px] bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-medium">Novo</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
