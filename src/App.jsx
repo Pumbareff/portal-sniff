@@ -1815,6 +1815,8 @@ const App = () => {
             <div className="ml-6 mt-1 space-y-0.5 border-l-2 border-purple-400/20 pl-3">
               {[
                 { id: 'marketing', label: 'Calendario E-commerce' },
+                { id: 'gerador_prompts', label: 'Gerador de Prompts IA' },
+                { id: 'metricas_kpis', label: 'Metricas & KPIs' },
                 { id: 'produtos_comprados', label: 'Produtos Comprados' },
                 { id: 'gestao_anuncios', label: 'Produtos Parados' },
                 { id: 'gestao_kanban', label: 'Kanban Parados' },
@@ -8921,6 +8923,8 @@ const App = () => {
       case 'compras': return <PedidoFornecedorView />;
       case 'controle_pagamentos': return <ControlePagamentosView />;
       case 'marketing': return <MarketingHubView />;
+      case 'gerador_prompts': return <GeradorPromptsView />;
+      case 'metricas_kpis': return <MetricasKPIsView />;
       case 'produtos_comprados': return <MarketingView />;
       case 'gestao_anuncios': return <GestaoAnunciosView />;
       case 'gestao_kanban': return <GestaoKanbanView />;
@@ -8990,7 +8994,7 @@ const App = () => {
             >
               <Menu size={24} />
             </button>
-            <h1 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('aguamarinha', 'Agua Marinha').replace('gestao_anuncios', 'Gestao de Produtos Parados').replace('gestao_kanban', 'Kanban - Produtos Parados').replace('oportunidades', 'Oportunidades').replace('analisevendas', 'Analise de Vendas').replace('pesquisamercado', 'Pesquisa de Mercado').replace('integracoes', 'Integracoes').replace('compras', 'Compras').replace('controle_pagamentos', 'Controle de Pagamentos').replace('produtos_comprados', 'Produtos Comprados')}</h1>
+            <h1 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('aguamarinha', 'Agua Marinha').replace('gestao_anuncios', 'Gestao de Produtos Parados').replace('gestao_kanban', 'Kanban - Produtos Parados').replace('oportunidades', 'Oportunidades').replace('analisevendas', 'Analise de Vendas').replace('pesquisamercado', 'Pesquisa de Mercado').replace('integracoes', 'Integracoes').replace('compras', 'Compras').replace('controle_pagamentos', 'Controle de Pagamentos').replace('produtos_comprados', 'Produtos Comprados').replace('gerador_prompts', 'Gerador de Prompts IA').replace('metricas_kpis', 'Metricas & KPIs')}</h1>
           </div>
 
           <div className="flex items-center gap-6">
