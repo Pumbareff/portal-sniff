@@ -292,53 +292,79 @@ async function handleDisconnect(req, res) {
   return res.status(200).json({ success: true, message: `Loja ${data.shop_name || data.shop_id} desconectada`, shop_id: data.shop_id });
 }
 
-// ─── Sync: Orders ───
+// ─── Sync: Orders (chunked for Vercel 10s timeout) ───
 
-async function syncOrdersForShop(shopId, daysBack = 90) {
-  const now = Math.floor(Date.now() / 1000);
-  const startTime = now - daysBack * 24 * 60 * 60;
+function mapOrderToRow(o, shopId) {
+  return {
+    order_sn: o.order_sn,
+    shop_id: shopId,
+    order_status: o.order_status,
+    buyer_user_id: o.buyer_user_id || null,
+    buyer_username: o.buyer_username || null,
+    total_amount: parseFloat(o.total_amount) || 0,
+    actual_shipping_fee: parseFloat(o.actual_shipping_fee) || 0,
+    buyer_paid: parseFloat(o.buyer_total_amount || o.total_amount) || 0,
+    seller_discount: parseFloat(o.seller_discount || 0),
+    shopee_discount: parseFloat(o.shopee_discount || 0),
+    voucher_from_seller: parseFloat(o.voucher_from_seller || 0),
+    voucher_from_shopee: parseFloat(o.voucher_from_shopee || 0),
+    coins: parseFloat(o.coins || 0),
+    shipping_carrier: o.shipping_carrier || null,
+    tracking_number: o.tracking_number || (o.package_list?.[0]?.logistics_channel_name) || null,
+    estimated_shipping_fee: parseFloat(o.estimated_shipping_fee) || 0,
+    payment_method: o.payment_method || null,
+    create_time: o.create_time,
+    update_time: o.update_time,
+    pay_time: o.pay_time || null,
+    ship_by_date: o.ship_by_date || null,
+    days_to_ship: o.days_to_ship || null,
+    items: JSON.stringify((o.item_list || []).map(it => ({
+      item_id: it.item_id,
+      item_name: it.item_name,
+      item_sku: it.item_sku,
+      model_id: it.model_id,
+      model_name: it.model_name,
+      model_sku: it.model_sku,
+      quantity: it.model_quantity_purchased || it.quantity_purchased,
+      price: parseFloat(it.model_discounted_price || it.model_original_price || 0),
+      image_url: it.image_info?.image_url || null,
+    }))),
+    raw_detail: JSON.stringify(o),
+    synced_at: new Date().toISOString(),
+  };
+}
 
-  // Shopee limits time_range to 15 days per call
-  const CHUNK_DAYS = 15;
-  const chunkSeconds = CHUNK_DAYS * 24 * 60 * 60;
+// Syncs ONE 15-day window. Returns { orders_fetched, orders_upserted, has_more, next_time_from, next_time_to }
+async function syncOrdersWindow(shopId, timeFrom, timeTo) {
   let allOrderSns = [];
+  let cursor = '';
+  let hasMore = true;
 
-  // Phase 1: Collect all order_sn via get_order_list (15-day windows)
-  let windowStart = startTime;
-  while (windowStart < now) {
-    let windowEnd = Math.min(windowStart + chunkSeconds, now);
-    let cursor = '';
-    let hasMore = true;
+  while (hasMore) {
+    const params = {
+      time_range_field: 'create_time',
+      time_from: timeFrom,
+      time_to: timeTo,
+      page_size: 100,
+    };
+    if (cursor) params.cursor = cursor;
 
-    while (hasMore) {
-      const params = {
-        time_range_field: 'create_time',
-        time_from: windowStart,
-        time_to: windowEnd,
-        page_size: 100,
-      };
-      if (cursor) params.cursor = cursor;
+    const data = await shopeeApiCall('/order/get_order_list', params, shopId);
+    const resp = data.response || {};
+    const orderList = resp.order_list || [];
+    allOrderSns.push(...orderList.map(o => o.order_sn));
 
-      const data = await shopeeApiCall('/order/get_order_list', params, shopId);
-      const resp = data.response || {};
-      const orderList = resp.order_list || [];
-      allOrderSns.push(...orderList.map(o => o.order_sn));
-
-      hasMore = resp.more || false;
-      cursor = resp.next_cursor || '';
-    }
-
-    windowStart = windowEnd;
+    hasMore = resp.more || false;
+    cursor = resp.next_cursor || '';
   }
 
   if (allOrderSns.length === 0) {
     return { orders_fetched: 0, orders_upserted: 0 };
   }
 
-  // Deduplicate
   allOrderSns = [...new Set(allOrderSns)];
 
-  // Phase 2: Get order details in batches of 50
+  // Get details in batches of 50
   let totalUpserted = 0;
   for (let i = 0; i < allOrderSns.length; i += 50) {
     const batch = allOrderSns.slice(i, i + 50);
@@ -348,43 +374,7 @@ async function syncOrdersForShop(shopId, daysBack = 90) {
     }, shopId);
 
     const orders = data.response?.order_list || [];
-    const rows = orders.map(o => ({
-      order_sn: o.order_sn,
-      shop_id: shopId,
-      order_status: o.order_status,
-      buyer_user_id: o.buyer_user_id || null,
-      buyer_username: o.buyer_username || null,
-      total_amount: parseFloat(o.total_amount) || 0,
-      actual_shipping_fee: parseFloat(o.actual_shipping_fee) || 0,
-      buyer_paid: parseFloat(o.buyer_total_amount || o.total_amount) || 0,
-      seller_discount: parseFloat(o.seller_discount || 0),
-      shopee_discount: parseFloat(o.shopee_discount || 0),
-      voucher_from_seller: parseFloat(o.voucher_from_seller || 0),
-      voucher_from_shopee: parseFloat(o.voucher_from_shopee || 0),
-      coins: parseFloat(o.coins || 0),
-      shipping_carrier: o.shipping_carrier || null,
-      tracking_number: o.tracking_number || (o.package_list?.[0]?.logistics_channel_name) || null,
-      estimated_shipping_fee: parseFloat(o.estimated_shipping_fee) || 0,
-      payment_method: o.payment_method || null,
-      create_time: o.create_time,
-      update_time: o.update_time,
-      pay_time: o.pay_time || null,
-      ship_by_date: o.ship_by_date || null,
-      days_to_ship: o.days_to_ship || null,
-      items: JSON.stringify((o.item_list || []).map(it => ({
-        item_id: it.item_id,
-        item_name: it.item_name,
-        item_sku: it.item_sku,
-        model_id: it.model_id,
-        model_name: it.model_name,
-        model_sku: it.model_sku,
-        quantity: it.model_quantity_purchased || it.quantity_purchased,
-        price: parseFloat(it.model_discounted_price || it.model_original_price || 0),
-        image_url: it.image_info?.image_url || null,
-      }))),
-      raw_detail: JSON.stringify(o),
-      synced_at: new Date().toISOString(),
-    }));
+    const rows = orders.map(o => mapOrderToRow(o, shopId));
 
     if (rows.length > 0) {
       const { error } = await supabase.from('shopee_orders').upsert(rows, { onConflict: 'order_sn,shop_id' });
@@ -399,205 +389,200 @@ async function syncOrdersForShop(shopId, daysBack = 90) {
 async function handleSyncOrders(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { shop_id, days = 90 } = req.body || req.query;
+  const body = req.body || {};
+  const query = req.query || {};
+  const shop_id = body.shop_id || query.shop_id;
+  const days = parseInt(body.days || query.days || 90);
+  // Accept explicit window or compute from days
+  const now = Math.floor(Date.now() / 1000);
+  const WINDOW = 15 * 24 * 60 * 60; // 15 days in seconds
+  const globalStart = now - days * 24 * 60 * 60;
+
+  let timeFrom = parseInt(body.time_from || query.time_from || 0);
+  let timeTo = parseInt(body.time_to || query.time_to || 0);
+
+  if (!timeFrom) timeFrom = globalStart;
+  if (!timeTo) timeTo = Math.min(timeFrom + WINDOW, now);
+
   if (!shop_id) return res.status(400).json({ error: 'shop_id required' });
 
   const startedAt = Date.now();
-
-  // Create sync log entry
-  const { data: logEntry } = await supabase.from('shopee_sync_log')
-    .insert({ shop_id: parseInt(shop_id), sync_type: 'orders', status: 'running' })
-    .select('id').single();
+  const shopIdInt = parseInt(shop_id);
 
   try {
-    const result = await syncOrdersForShop(parseInt(shop_id), parseInt(days));
+    const result = await syncOrdersWindow(shopIdInt, timeFrom, timeTo);
 
-    await supabase.from('shopee_sync_log').update({
+    // Check if there are more windows to process
+    const nextFrom = timeTo;
+    const hasMore = nextFrom < now;
+    const nextTo = hasMore ? Math.min(nextFrom + WINDOW, now) : null;
+
+    // Log this chunk
+    await supabase.from('shopee_sync_log').insert({
+      shop_id: shopIdInt,
+      sync_type: 'orders',
       status: 'completed',
       orders_fetched: result.orders_fetched,
       orders_upserted: result.orders_upserted,
       completed_at: new Date().toISOString(),
       duration_ms: Date.now() - startedAt,
-    }).eq('id', logEntry.id);
+    });
 
-    return res.status(200).json({ success: true, shop_id: parseInt(shop_id), ...result, duration_ms: Date.now() - startedAt });
+    return res.status(200).json({
+      success: true,
+      shop_id: shopIdInt,
+      ...result,
+      window: { time_from: timeFrom, time_to: timeTo },
+      has_more: hasMore,
+      next_time_from: hasMore ? nextFrom : null,
+      next_time_to: nextTo,
+      duration_ms: Date.now() - startedAt,
+    });
   } catch (error) {
-    await supabase.from('shopee_sync_log').update({
+    await supabase.from('shopee_sync_log').insert({
+      shop_id: shopIdInt,
+      sync_type: 'orders',
       status: 'error',
       error_message: error.message,
       completed_at: new Date().toISOString(),
       duration_ms: Date.now() - startedAt,
-    }).eq('id', logEntry.id);
+    });
 
-    return res.status(500).json({ error: error.message, shop_id: parseInt(shop_id) });
+    return res.status(500).json({ error: error.message, shop_id: shopIdInt });
   }
 }
 
 // ─── Sync: Escrow ───
 
-async function syncEscrowForShop(shopId) {
-  // Get all COMPLETED orders that don't have escrow yet
-  const { data: orders, error } = await supabase
-    .from('shopee_orders')
-    .select('order_sn')
-    .eq('shop_id', shopId)
-    .eq('order_status', 'COMPLETED')
-    .not('order_sn', 'in', `(SELECT order_sn FROM shopee_escrow WHERE shop_id = ${shopId})`);
+// Escrow: process a batch of N orders (default 10 to fit in 10s)
+async function handleSyncEscrow(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  // Fallback: if subquery doesn't work, get all COMPLETED and filter
-  let orderSns;
-  if (error || !orders) {
+  const body = req.body || {};
+  const query = req.query || {};
+  const shop_id = body.shop_id || query.shop_id;
+  const batchSize = parseInt(body.batch_size || query.batch_size || 10);
+  if (!shop_id) return res.status(400).json({ error: 'shop_id required' });
+
+  const shopIdInt = parseInt(shop_id);
+  const startedAt = Date.now();
+
+  try {
+    // Get COMPLETED orders missing escrow
     const { data: allCompleted } = await supabase
       .from('shopee_orders')
       .select('order_sn')
-      .eq('shop_id', shopId)
+      .eq('shop_id', shopIdInt)
       .eq('order_status', 'COMPLETED');
 
     const { data: existingEscrow } = await supabase
       .from('shopee_escrow')
       .select('order_sn')
-      .eq('shop_id', shopId);
+      .eq('shop_id', shopIdInt);
 
     const existingSet = new Set((existingEscrow || []).map(e => e.order_sn));
-    orderSns = (allCompleted || []).filter(o => !existingSet.has(o.order_sn)).map(o => o.order_sn);
-  } else {
-    orderSns = orders.map(o => o.order_sn);
-  }
+    const pending = (allCompleted || []).filter(o => !existingSet.has(o.order_sn)).map(o => o.order_sn);
 
-  if (orderSns.length === 0) {
-    return { escrow_fetched: 0 };
-  }
+    // Process only batchSize orders per call
+    const batch = pending.slice(0, batchSize);
+    let fetched = 0;
 
-  let fetched = 0;
-  for (const orderSn of orderSns) {
-    try {
-      const data = await shopeeApiCall('/payment/get_escrow_detail', { order_sn: orderSn }, shopId);
-      const resp = data.response || {};
+    for (const orderSn of batch) {
+      try {
+        const data = await shopeeApiCall('/payment/get_escrow_detail', { order_sn: orderSn }, shopIdInt);
+        const resp = data.response || {};
 
-      const row = {
-        order_sn: orderSn,
-        shop_id: shopId,
-        order_income: parseFloat(resp.order_income || 0),
-        buyer_total_amount: parseFloat(resp.buyer_total_amount || 0),
-        original_price: parseFloat(resp.original_price || 0),
-        seller_discount: parseFloat(resp.seller_discount || 0),
-        shopee_discount: parseFloat(resp.shopee_discount || 0),
-        voucher_from_seller: parseFloat(resp.voucher_from_seller || 0),
-        voucher_from_shopee: parseFloat(resp.voucher_from_shopee || 0),
-        coins: parseFloat(resp.coins || 0),
-        buyer_paid_shipping_fee: parseFloat(resp.buyer_paid_shipping_fee || 0),
-        commission_fee: parseFloat(resp.commission_fee || 0),
-        service_fee: parseFloat(resp.service_fee || 0),
-        transaction_fee: parseFloat(resp.final_product_protection || resp.transaction_fee || 0),
-        escrow_amount: parseFloat(resp.escrow_amount || resp.order_income || 0),
-        escrow_tax: parseFloat(resp.escrow_tax || 0),
-        raw_escrow: JSON.stringify(resp),
-        synced_at: new Date().toISOString(),
-      };
+        const row = {
+          order_sn: orderSn,
+          shop_id: shopIdInt,
+          order_income: parseFloat(resp.order_income || 0),
+          buyer_total_amount: parseFloat(resp.buyer_total_amount || 0),
+          original_price: parseFloat(resp.original_price || 0),
+          seller_discount: parseFloat(resp.seller_discount || 0),
+          shopee_discount: parseFloat(resp.shopee_discount || 0),
+          voucher_from_seller: parseFloat(resp.voucher_from_seller || 0),
+          voucher_from_shopee: parseFloat(resp.voucher_from_shopee || 0),
+          coins: parseFloat(resp.coins || 0),
+          buyer_paid_shipping_fee: parseFloat(resp.buyer_paid_shipping_fee || 0),
+          commission_fee: parseFloat(resp.commission_fee || 0),
+          service_fee: parseFloat(resp.service_fee || 0),
+          transaction_fee: parseFloat(resp.final_product_protection || resp.transaction_fee || 0),
+          escrow_amount: parseFloat(resp.escrow_amount || resp.order_income || 0),
+          escrow_tax: parseFloat(resp.escrow_tax || 0),
+          raw_escrow: JSON.stringify(resp),
+          synced_at: new Date().toISOString(),
+        };
 
-      await supabase.from('shopee_escrow').upsert(row, { onConflict: 'order_sn,shop_id' });
-      fetched++;
-    } catch (e) {
-      console.warn(`Escrow fetch failed for ${orderSn}:`, e.message);
+        await supabase.from('shopee_escrow').upsert(row, { onConflict: 'order_sn,shop_id' });
+        fetched++;
+      } catch (e) {
+        console.warn(`Escrow fetch failed for ${orderSn}:`, e.message);
+      }
     }
-  }
 
-  return { escrow_fetched: fetched, escrow_total: orderSns.length };
-}
+    const remaining = pending.length - batch.length;
 
-async function handleSyncEscrow(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-
-  const { shop_id } = req.body || req.query;
-  if (!shop_id) return res.status(400).json({ error: 'shop_id required' });
-
-  const startedAt = Date.now();
-
-  const { data: logEntry } = await supabase.from('shopee_sync_log')
-    .insert({ shop_id: parseInt(shop_id), sync_type: 'escrow', status: 'running' })
-    .select('id').single();
-
-  try {
-    const result = await syncEscrowForShop(parseInt(shop_id));
-
-    await supabase.from('shopee_sync_log').update({
+    await supabase.from('shopee_sync_log').insert({
+      shop_id: shopIdInt,
+      sync_type: 'escrow',
       status: 'completed',
-      escrow_fetched: result.escrow_fetched,
+      escrow_fetched: fetched,
       completed_at: new Date().toISOString(),
       duration_ms: Date.now() - startedAt,
-    }).eq('id', logEntry.id);
+    });
 
-    return res.status(200).json({ success: true, shop_id: parseInt(shop_id), ...result, duration_ms: Date.now() - startedAt });
+    return res.status(200).json({
+      success: true,
+      shop_id: shopIdInt,
+      escrow_fetched: fetched,
+      escrow_pending: remaining,
+      has_more: remaining > 0,
+      duration_ms: Date.now() - startedAt,
+    });
   } catch (error) {
-    await supabase.from('shopee_sync_log').update({
-      status: 'error',
-      error_message: error.message,
-      completed_at: new Date().toISOString(),
-      duration_ms: Date.now() - startedAt,
-    }).eq('id', logEntry.id);
-
-    return res.status(500).json({ error: error.message, shop_id: parseInt(shop_id) });
+    return res.status(500).json({ error: error.message, shop_id: shopIdInt });
   }
 }
 
-// ─── Sync: Full orchestrator ───
+// ─── Sync: Full orchestrator (one window per call) ───
 
 async function handleSync(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { shop_id, days = 90 } = req.body || {};
+  // This endpoint just returns the sync plan - frontend loops through windows
+  const { data: shops } = await supabase
+    .from('shopee_tokens')
+    .select('shop_id, shop_name')
+    .eq('is_active', true);
 
-  // If shop_id provided, sync just that shop
-  const shopIds = [];
-  if (shop_id) {
-    shopIds.push(parseInt(shop_id));
-  } else {
-    // All active shops
-    const { data: shops } = await supabase
-      .from('shopee_tokens')
-      .select('shop_id')
-      .eq('is_active', true);
-    shopIds.push(...(shops || []).map(s => s.shop_id));
-  }
-
-  if (shopIds.length === 0) {
+  if (!shops || shops.length === 0) {
     return res.status(400).json({ error: 'No active shops to sync' });
   }
 
-  const results = [];
-  for (const sid of shopIds) {
-    const startedAt = Date.now();
-    const { data: logEntry } = await supabase.from('shopee_sync_log')
-      .insert({ shop_id: sid, sync_type: 'full', status: 'running' })
-      .select('id').single();
+  const now = Math.floor(Date.now() / 1000);
+  const WINDOW = 15 * 24 * 60 * 60;
+  const days = parseInt(req.body?.days || 90);
+  const startTime = now - days * 24 * 60 * 60;
 
-    try {
-      const orderResult = await syncOrdersForShop(sid, parseInt(days));
-      const escrowResult = await syncEscrowForShop(sid);
-
-      await supabase.from('shopee_sync_log').update({
-        status: 'completed',
-        orders_fetched: orderResult.orders_fetched,
-        orders_upserted: orderResult.orders_upserted,
-        escrow_fetched: escrowResult.escrow_fetched,
-        completed_at: new Date().toISOString(),
-        duration_ms: Date.now() - startedAt,
-      }).eq('id', logEntry.id);
-
-      results.push({ shop_id: sid, success: true, ...orderResult, ...escrowResult, duration_ms: Date.now() - startedAt });
-    } catch (error) {
-      await supabase.from('shopee_sync_log').update({
-        status: 'error',
-        error_message: error.message,
-        completed_at: new Date().toISOString(),
-        duration_ms: Date.now() - startedAt,
-      }).eq('id', logEntry.id);
-
-      results.push({ shop_id: sid, success: false, error: error.message });
+  // Build sync plan: each shop gets N windows
+  const plan = shops.map(s => {
+    const windows = [];
+    let wStart = startTime;
+    while (wStart < now) {
+      const wEnd = Math.min(wStart + WINDOW, now);
+      windows.push({ time_from: wStart, time_to: wEnd });
+      wStart = wEnd;
     }
-  }
+    return { shop_id: s.shop_id, shop_name: s.shop_name, windows, total_windows: windows.length };
+  });
 
-  return res.status(200).json({ success: true, results });
+  return res.status(200).json({
+    success: true,
+    plan,
+    total_shops: shops.length,
+    total_windows: plan.reduce((sum, p) => sum + p.total_windows, 0),
+    instructions: 'Call POST /api/shopee?action=sync_orders with shop_id + time_from + time_to for each window. Then call sync_escrow for each shop.',
+  });
 }
 
 // ─── Dashboard data ───
