@@ -334,56 +334,49 @@ function mapOrderToRow(o, shopId) {
   };
 }
 
-// Syncs ONE 15-day window. Returns { orders_fetched, orders_upserted, has_more, next_time_from, next_time_to }
-async function syncOrdersWindow(shopId, timeFrom, timeTo) {
-  let allOrderSns = [];
-  let cursor = '';
-  let hasMore = true;
+// Syncs ONE PAGE of orders (max 50). Returns cursor for continuation.
+// Designed to fit within Vercel Hobby 10s limit (1 list call + 1 detail call + 1 upsert).
+async function syncOrdersWindow(shopId, timeFrom, timeTo, cursor = '') {
+  // Step 1: ONE page of order list (max 50 to leave time for detail call)
+  const params = {
+    time_range_field: 'create_time',
+    time_from: timeFrom,
+    time_to: timeTo,
+    page_size: 50,
+  };
+  if (cursor) params.cursor = cursor;
 
-  while (hasMore) {
-    const params = {
-      time_range_field: 'create_time',
-      time_from: timeFrom,
-      time_to: timeTo,
-      page_size: 100,
-    };
-    if (cursor) params.cursor = cursor;
+  const data = await shopeeApiCall('/order/get_order_list', params, shopId);
+  const resp = data.response || {};
+  const orderList = resp.order_list || [];
+  const orderSns = [...new Set(orderList.map(o => o.order_sn))];
 
-    const data = await shopeeApiCall('/order/get_order_list', params, shopId);
-    const resp = data.response || {};
-    const orderList = resp.order_list || [];
-    allOrderSns.push(...orderList.map(o => o.order_sn));
-
-    hasMore = resp.more || false;
-    cursor = resp.next_cursor || '';
+  if (orderSns.length === 0) {
+    return { orders_fetched: 0, orders_upserted: 0, has_more: false, next_cursor: '' };
   }
 
-  if (allOrderSns.length === 0) {
-    return { orders_fetched: 0, orders_upserted: 0 };
-  }
+  // Step 2: ONE batch of details (up to 50)
+  const detailData = await shopeeApiCall('/order/get_order_detail', {
+    order_sn_list: orderSns.join(','),
+    response_optional_fields: 'buyer_user_id,buyer_username,estimated_shipping_fee,actual_shipping_fee,total_amount,pay_time,buyer_cancel_reason,item_list,ship_by_date,payment_method,shipping_carrier,tracking_number,package_list,order_chargeable_weight_gram',
+  }, shopId);
 
-  allOrderSns = [...new Set(allOrderSns)];
+  const orders = detailData.response?.order_list || [];
+  const rows = orders.map(o => mapOrderToRow(o, shopId));
 
-  // Get details in batches of 50
   let totalUpserted = 0;
-  for (let i = 0; i < allOrderSns.length; i += 50) {
-    const batch = allOrderSns.slice(i, i + 50);
-    const data = await shopeeApiCall('/order/get_order_detail', {
-      order_sn_list: batch.join(','),
-      response_optional_fields: 'buyer_user_id,buyer_username,estimated_shipping_fee,actual_shipping_fee,total_amount,pay_time,buyer_cancel_reason,item_list,ship_by_date,payment_method,shipping_carrier,tracking_number,package_list,order_chargeable_weight_gram',
-    }, shopId);
-
-    const orders = data.response?.order_list || [];
-    const rows = orders.map(o => mapOrderToRow(o, shopId));
-
-    if (rows.length > 0) {
-      const { error } = await supabase.from('shopee_orders').upsert(rows, { onConflict: 'order_sn,shop_id' });
-      if (error) console.error(`Upsert error batch ${i}:`, error.message);
-      else totalUpserted += rows.length;
-    }
+  if (rows.length > 0) {
+    const { error } = await supabase.from('shopee_orders').upsert(rows, { onConflict: 'order_sn,shop_id' });
+    if (error) console.error(`Upsert error:`, error.message);
+    else totalUpserted = rows.length;
   }
 
-  return { orders_fetched: allOrderSns.length, orders_upserted: totalUpserted };
+  return {
+    orders_fetched: orderSns.length,
+    orders_upserted: totalUpserted,
+    has_more: resp.more || false,
+    next_cursor: resp.next_cursor || '',
+  };
 }
 
 async function handleSyncOrders(req, res) {
@@ -393,6 +386,7 @@ async function handleSyncOrders(req, res) {
   const query = req.query || {};
   const shop_id = body.shop_id || query.shop_id;
   const days = parseInt(body.days || query.days || 90);
+  const cursor = body.cursor || query.cursor || '';
   // Accept explicit window or compute from days
   const now = Math.floor(Date.now() / 1000);
   const WINDOW = 15 * 24 * 60 * 60; // 15 days in seconds
@@ -410,12 +404,12 @@ async function handleSyncOrders(req, res) {
   const shopIdInt = parseInt(shop_id);
 
   try {
-    const result = await syncOrdersWindow(shopIdInt, timeFrom, timeTo);
+    const result = await syncOrdersWindow(shopIdInt, timeFrom, timeTo, cursor);
 
-    // Check if there are more windows to process
-    const nextFrom = timeTo;
-    const hasMore = nextFrom < now;
-    const nextTo = hasMore ? Math.min(nextFrom + WINDOW, now) : null;
+    // Determine if there's more: either more pages in this window, or more windows
+    const hasMorePages = result.has_more;
+    const nextWindowFrom = timeTo;
+    const hasMoreWindows = nextWindowFrom < now;
 
     // Log this chunk
     await supabase.from('shopee_sync_log').insert({
@@ -433,9 +427,11 @@ async function handleSyncOrders(req, res) {
       shop_id: shopIdInt,
       ...result,
       window: { time_from: timeFrom, time_to: timeTo },
-      has_more: hasMore,
-      next_time_from: hasMore ? nextFrom : null,
-      next_time_to: nextTo,
+      // If more pages in current window, return cursor. If window done, advance window.
+      has_more: hasMorePages || hasMoreWindows,
+      next_cursor: hasMorePages ? result.next_cursor : '',
+      next_time_from: hasMorePages ? timeFrom : (hasMoreWindows ? nextWindowFrom : null),
+      next_time_to: hasMorePages ? timeTo : (hasMoreWindows ? Math.min(nextWindowFrom + WINDOW, now) : null),
       duration_ms: Date.now() - startedAt,
     });
   } catch (error) {
