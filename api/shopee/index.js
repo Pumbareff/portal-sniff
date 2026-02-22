@@ -498,42 +498,45 @@ async function handleSyncEscrow(req, res) {
     const existingSet = new Set(existingEscrow.map(e => e.order_sn));
     const pending = allCompleted.filter(o => !existingSet.has(o.order_sn)).map(o => o.order_sn);
 
-    // Process only batchSize orders per call
+    // Process batchSize orders per call, 5 concurrent API calls
     const batch = pending.slice(0, batchSize);
     let fetched = 0;
+    const CONCURRENCY = 5;
 
-    for (const orderSn of batch) {
-      try {
-        const data = await shopeeApiCall('/payment/get_escrow_detail', { order_sn: orderSn }, shopIdInt);
-        const resp = data.response || {};
-        // Shopee nests financial data under response.order_income
-        const income = resp.order_income || resp;
+    async function fetchOneEscrow(orderSn) {
+      const data = await shopeeApiCall('/payment/get_escrow_detail', { order_sn: orderSn }, shopIdInt);
+      const resp = data.response || {};
+      const income = resp.order_income || resp;
+      return {
+        order_sn: orderSn,
+        shop_id: shopIdInt,
+        order_income: parseFloat(income.escrow_amount || 0),
+        buyer_total_amount: parseFloat(income.buyer_total_amount || resp.buyer_total_amount || 0),
+        original_price: parseFloat(income.original_price || resp.original_price || 0),
+        seller_discount: parseFloat(income.seller_discount || 0),
+        shopee_discount: parseFloat(income.shopee_discount || 0),
+        voucher_from_seller: parseFloat(income.voucher_from_seller || 0),
+        voucher_from_shopee: parseFloat(income.voucher_from_shopee || 0),
+        coins: parseFloat(income.coins || 0),
+        buyer_paid_shipping_fee: parseFloat(income.buyer_paid_shipping_fee || 0),
+        commission_fee: parseFloat(income.commission_fee || 0),
+        service_fee: parseFloat(income.service_fee || 0),
+        transaction_fee: parseFloat(income.final_product_protection || income.seller_transaction_fee || 0),
+        escrow_amount: parseFloat(income.escrow_amount || 0),
+        escrow_tax: parseFloat(income.escrow_tax || 0),
+        raw_escrow: JSON.stringify(resp),
+        synced_at: new Date().toISOString(),
+      };
+    }
 
-        const row = {
-          order_sn: orderSn,
-          shop_id: shopIdInt,
-          order_income: parseFloat(income.escrow_amount || 0),
-          buyer_total_amount: parseFloat(income.buyer_total_amount || resp.buyer_total_amount || 0),
-          original_price: parseFloat(income.original_price || resp.original_price || 0),
-          seller_discount: parseFloat(income.seller_discount || 0),
-          shopee_discount: parseFloat(income.shopee_discount || 0),
-          voucher_from_seller: parseFloat(income.voucher_from_seller || 0),
-          voucher_from_shopee: parseFloat(income.voucher_from_shopee || 0),
-          coins: parseFloat(income.coins || 0),
-          buyer_paid_shipping_fee: parseFloat(income.buyer_paid_shipping_fee || 0),
-          commission_fee: parseFloat(income.commission_fee || 0),
-          service_fee: parseFloat(income.service_fee || 0),
-          transaction_fee: parseFloat(income.final_product_protection || income.seller_transaction_fee || 0),
-          escrow_amount: parseFloat(income.escrow_amount || 0),
-          escrow_tax: parseFloat(income.escrow_tax || 0),
-          raw_escrow: JSON.stringify(resp),
-          synced_at: new Date().toISOString(),
-        };
-
-        await supabase.from('shopee_escrow').upsert(row, { onConflict: 'order_sn,shop_id' });
-        fetched++;
-      } catch (e) {
-        console.warn(`Escrow fetch failed for ${orderSn}:`, e.message);
+    // Process in chunks of CONCURRENCY
+    for (let i = 0; i < batch.length; i += CONCURRENCY) {
+      const chunk = batch.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(chunk.map(sn => fetchOneEscrow(sn)));
+      const rows = results.filter(r => r.status === 'fulfilled').map(r => r.value);
+      if (rows.length > 0) {
+        await supabase.from('shopee_escrow').upsert(rows, { onConflict: 'order_sn,shop_id' });
+        fetched += rows.length;
       }
     }
 
