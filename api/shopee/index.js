@@ -636,6 +636,34 @@ async function handleDashboard(req, res) {
     .order('started_at', { ascending: false })
     .limit(10);
 
+  // Compute total shipping per shop (to derive product_revenue = total_revenue - shipping)
+  const shopIds = [...new Set((summary || []).map(s => s.shop_id))];
+  const shippingByShop = {};
+  for (const sid of shopIds) {
+    let totalShipping = 0;
+    let pgOffset = 0;
+    const PG_SIZE = 2000;
+    while (true) {
+      const { data: rows } = await supabase
+        .from('shopee_orders')
+        .select('actual_shipping_fee')
+        .eq('shop_id', sid)
+        .in('order_status', ['COMPLETED', 'SHIPPED', 'READY_TO_SHIP', 'PROCESSED'])
+        .range(pgOffset, pgOffset + PG_SIZE - 1);
+      if (!rows || rows.length === 0) break;
+      totalShipping += rows.reduce((sum, r) => sum + (parseFloat(r.actual_shipping_fee) || 0), 0);
+      if (rows.length < PG_SIZE) break;
+      pgOffset += PG_SIZE;
+    }
+    shippingByShop[sid] = Math.round(totalShipping * 100) / 100;
+  }
+
+  // Enrich summary with product_revenue
+  (summary || []).forEach(s => {
+    s.total_shipping = shippingByShop[s.shop_id] || 0;
+    s.product_revenue = Math.round((s.total_revenue - (shippingByShop[s.shop_id] || 0)) * 100) / 100;
+  });
+
   // Filter by shop_id if provided
   const filtered = shop_id
     ? (summary || []).filter(s => String(s.shop_id) === String(shop_id))
@@ -693,6 +721,8 @@ async function handleOrders(req, res) {
       o.escrow_amount = esc?.escrow_amount || null;
       o.order_income = esc?.order_income || null;
       o.has_escrow = !!esc;
+      // Product amount = total minus shipping (what the seller actually sold for)
+      o.product_amount = Math.round(((parseFloat(o.total_amount) || 0) - (parseFloat(o.actual_shipping_fee) || 0)) * 100) / 100;
     });
   }
 

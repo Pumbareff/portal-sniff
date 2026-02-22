@@ -720,7 +720,7 @@ const App = () => {
     // KPIs from dashboard (global) - filtered by selected shop
     const filteredDash = selectedShop === 'all' ? dashboardData : dashboardData.filter(d => String(d.shop_id) === String(selectedShop));
     const kpiOrders = filteredDash.reduce((s, d) => s + (d.total_orders || 0), 0);
-    const kpiRevenue = filteredDash.reduce((s, d) => s + parseFloat(d.total_revenue || 0), 0);
+    const kpiRevenue = filteredDash.reduce((s, d) => s + parseFloat(d.product_revenue || d.total_revenue || 0), 0);
     const kpiCommission = filteredDash.reduce((s, d) => s + parseFloat(d.total_commission || 0), 0);
     const kpiPayout = filteredDash.reduce((s, d) => s + parseFloat(d.total_seller_payout || 0), 0);
     const kpiAvgTicket = filteredDash.length > 0 ? filteredDash.reduce((s, d) => s + parseFloat(d.avg_ticket || 0), 0) / filteredDash.length : 0;
@@ -742,8 +742,8 @@ const App = () => {
               <p className="text-2xl font-bold text-gray-800">{dashboardData.reduce((s,d) => s + (d.total_orders||0), 0).toLocaleString('pt-BR')}</p>
             </div>
             <div className="bg-white rounded-xl p-4 border border-gray-100">
-              <p className="text-xs text-gray-500">Receita Total</p>
-              <p className="text-2xl font-bold text-gray-800">{formatCurrency(dashboardData.reduce((s,d) => s + parseFloat(d.total_revenue||0), 0))}</p>
+              <p className="text-xs text-gray-500">Receita Produtos</p>
+              <p className="text-2xl font-bold text-gray-800">{formatCurrency(dashboardData.reduce((s,d) => s + parseFloat(d.product_revenue||d.total_revenue||0), 0))}</p>
             </div>
             <div className="bg-white rounded-xl p-4 border border-gray-100">
               <p className="text-xs text-gray-500">Concluidos</p>
@@ -778,7 +778,7 @@ const App = () => {
                     </div>
                     <div>
                       <p className="text-white/60 text-xs">Receita</p>
-                      <p className="font-bold text-sm">R$ {((parseFloat(dash.total_revenue)||0)/1000).toFixed(1)}k</p>
+                      <p className="font-bold text-sm">R$ {((parseFloat(dash.product_revenue||dash.total_revenue)||0)/1000).toFixed(1)}k</p>
                     </div>
                     <div>
                       <p className="text-white/60 text-xs">Ticket</p>
@@ -856,7 +856,7 @@ const App = () => {
             <p className="text-2xl font-bold text-gray-800">{kpiOrders.toLocaleString('pt-BR')}</p>
           </div>
           <div className="bg-white rounded-xl p-4 border border-gray-100">
-            <p className="text-xs text-gray-500">Receita Total</p>
+            <p className="text-xs text-gray-500">Receita Produtos</p>
             <p className="text-2xl font-bold text-gray-800">{formatCurrency(kpiRevenue)}</p>
           </div>
           <div className="bg-white rounded-xl p-4 border border-gray-100">
@@ -894,7 +894,7 @@ const App = () => {
                     <th className="text-left py-3 px-4 font-semibold text-gray-600">Loja</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-600">Status</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-600">Comprador</th>
-                    <th className="text-right py-3 px-4 font-semibold text-gray-600">Total</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-600">Valor Venda</th>
                     <th className="text-right py-3 px-4 font-semibold text-gray-600">Comissao</th>
                     <th className="text-right py-3 px-4 font-semibold text-gray-600">Taxa Servico</th>
                     <th className="text-right py-3 px-4 font-semibold text-gray-600">Repasse</th>
@@ -917,7 +917,7 @@ const App = () => {
                           </span>
                         </td>
                         <td className="py-3 px-4 text-gray-700">{o.buyer_username || '-'}</td>
-                        <td className="py-3 px-4 text-right font-medium text-gray-800">{formatCurrency(o.total_amount)}</td>
+                        <td className="py-3 px-4 text-right font-medium text-gray-800">{formatCurrency(o.product_amount || (o.total_amount - (o.actual_shipping_fee || 0)))}</td>
                         <td className="py-3 px-4 text-right text-red-600 font-medium">
                           {o.has_escrow ? formatCurrency(o.commission_fee) : <span className="text-gray-300 text-xs">-</span>}
                         </td>
