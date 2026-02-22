@@ -1,5 +1,10 @@
 whatsapp-bot
 api/debug
+api/baselinker/analytics.js
+api/baselinker/cached-analytics.js
+api/baselinker/inventories.js
+api/baselinker/sync.js
+api/reconhecimento.js
 *.png
 *.json.bak
 temp_*.json
