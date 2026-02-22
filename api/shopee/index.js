@@ -641,7 +641,7 @@ async function handleOrders(req, res) {
 
   let query = supabase
     .from('shopee_orders')
-    .select('order_sn, shop_id, order_status, buyer_username, total_amount, actual_shipping_fee, shipping_carrier, tracking_number, payment_method, create_time, items, synced_at', { count: 'exact' })
+    .select('order_sn, shop_id, order_status, buyer_username, total_amount, actual_shipping_fee, shipping_carrier, tracking_number, payment_method, create_time, update_time, pay_time, items, seller_discount, shopee_discount, voucher_from_seller, voucher_from_shopee, synced_at', { count: 'exact' })
     .order('create_time', { ascending: false })
     .range(offset, offset + parseInt(limit) - 1);
 
@@ -652,13 +652,124 @@ async function handleOrders(req, res) {
 
   if (error) return res.status(500).json({ error: error.message });
 
+  // Enrich with escrow data (commission, service fee, payout)
+  const orders = data || [];
+  if (orders.length > 0) {
+    const orderSns = orders.map(o => o.order_sn);
+    const { data: escrows } = await supabase
+      .from('shopee_escrow')
+      .select('order_sn, shop_id, commission_fee, service_fee, transaction_fee, escrow_amount, buyer_total_amount, order_income')
+      .in('order_sn', orderSns);
+
+    const escrowMap = {};
+    (escrows || []).forEach(e => { escrowMap[`${e.order_sn}_${e.shop_id}`] = e; });
+
+    orders.forEach(o => {
+      const esc = escrowMap[`${o.order_sn}_${o.shop_id}`];
+      o.commission_fee = esc?.commission_fee || null;
+      o.service_fee = esc?.service_fee || null;
+      o.transaction_fee = esc?.transaction_fee || null;
+      o.escrow_amount = esc?.escrow_amount || null;
+      o.order_income = esc?.order_income || null;
+      o.has_escrow = !!esc;
+    });
+  }
+
+  // Get shop names
+  const { data: shops } = await supabase
+    .from('shopee_tokens')
+    .select('shop_id, shop_name')
+    .eq('is_active', true);
+  const shopNames = {};
+  (shops || []).forEach(s => { shopNames[s.shop_id] = s.shop_name; });
+
+  orders.forEach(o => { o.shop_name = shopNames[o.shop_id] || String(o.shop_id); });
+
   return res.status(200).json({
-    orders: data || [],
+    orders,
     total: count || 0,
     page: parseInt(page),
     limit: parseInt(limit),
     pages: Math.ceil((count || 0) / parseInt(limit)),
   });
+}
+
+// ─── Live orders: fetch directly from Shopee API ───
+
+async function handleLiveOrders(req, res) {
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
+  const { shop_id, days = 15, page_size = 30 } = req.query;
+  if (!shop_id) return res.status(400).json({ error: 'shop_id required' });
+
+  const shopIdInt = parseInt(shop_id);
+  const now = Math.floor(Date.now() / 1000);
+  const timeFrom = now - parseInt(days) * 24 * 60 * 60;
+
+  // 1. Get order list from Shopee API
+  const listData = await shopeeApiCall('/order/get_order_list', {
+    time_range_field: 'create_time',
+    time_from: timeFrom,
+    time_to: now,
+    page_size: parseInt(page_size),
+  }, shopIdInt);
+
+  const orderSns = (listData.response?.order_list || []).map(o => o.order_sn);
+  if (orderSns.length === 0) {
+    return res.status(200).json({ orders: [], total: 0, source: 'live' });
+  }
+
+  // 2. Get order details
+  const detailData = await shopeeApiCall('/order/get_order_detail', {
+    order_sn_list: orderSns.join(','),
+    response_optional_fields: 'buyer_user_id,buyer_username,estimated_shipping_fee,actual_shipping_fee,total_amount,pay_time,item_list,ship_by_date,payment_method,shipping_carrier,tracking_number,package_list',
+  }, shopIdInt);
+
+  const orders = (detailData.response?.order_list || []).map(o => ({
+    order_sn: o.order_sn,
+    shop_id: shopIdInt,
+    order_status: o.order_status,
+    buyer_username: o.buyer_username || null,
+    total_amount: parseFloat(o.total_amount) || 0,
+    actual_shipping_fee: parseFloat(o.actual_shipping_fee) || 0,
+    shipping_carrier: o.shipping_carrier || null,
+    tracking_number: o.tracking_number || null,
+    payment_method: o.payment_method || null,
+    create_time: o.create_time,
+    items: (o.item_list || []).map(it => ({
+      item_name: it.item_name,
+      item_sku: it.item_sku,
+      model_name: it.model_name,
+      quantity: it.model_quantity_purchased || it.quantity_purchased,
+      price: parseFloat(it.model_discounted_price || it.model_original_price || 0),
+    })),
+  }));
+
+  // 3. Enrich with cached escrow if available
+  if (orders.length > 0) {
+    const { data: escrows } = await supabase
+      .from('shopee_escrow')
+      .select('order_sn, commission_fee, service_fee, transaction_fee, escrow_amount, order_income')
+      .in('order_sn', orderSns)
+      .eq('shop_id', shopIdInt);
+
+    const escrowMap = {};
+    (escrows || []).forEach(e => { escrowMap[e.order_sn] = e; });
+
+    orders.forEach(o => {
+      const esc = escrowMap[o.order_sn];
+      o.commission_fee = esc?.commission_fee || null;
+      o.service_fee = esc?.service_fee || null;
+      o.escrow_amount = esc?.escrow_amount || null;
+      o.has_escrow = !!esc;
+    });
+  }
+
+  // Get shop name
+  const { data: shopRow } = await supabase.from('shopee_tokens').select('shop_name').eq('shop_id', shopIdInt).single();
+  orders.forEach(o => { o.shop_name = shopRow?.shop_name || String(shopIdInt); });
+
+  return res.status(200).json({ orders, total: orders.length, source: 'live' });
 }
 
 // ─── Main router ───
@@ -682,9 +793,10 @@ export default async function handler(req, res) {
       case 'sync': return await handleSync(req, res);
       case 'dashboard': return await handleDashboard(req, res);
       case 'orders': return await handleOrders(req, res);
+      case 'live_orders': return await handleLiveOrders(req, res);
       default: return res.status(400).json({
         error: `Acao desconhecida: ${action}`,
-        valid: ['auth', 'callback', 'status', 'disconnect', 'sync_orders', 'sync_escrow', 'sync', 'dashboard', 'orders'],
+        valid: ['auth', 'callback', 'status', 'disconnect', 'sync_orders', 'sync_escrow', 'sync', 'dashboard', 'orders', 'live_orders'],
       });
     }
   } catch (error) {

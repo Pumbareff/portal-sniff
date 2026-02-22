@@ -585,16 +585,26 @@ const App = () => {
 
   // Shopee View - Dashboard e sub-views da integracao Shopee API
   const ShopeeView = ({ subTab = 'dashboard' }) => {
-    const [shopData, setShopData] = useState(null);
+    const [shops, setShops] = useState([]);
+    const [selectedShop, setSelectedShop] = useState('all');
+    const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [ordersLoading, setOrdersLoading] = useState(false);
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalOrders, setTotalOrders] = useState(0);
+    const [statusFilter, setStatusFilter] = useState('');
+    const [syncing, setSyncing] = useState(false);
+    const [syncMsg, setSyncMsg] = useState('');
+    const [expandedOrder, setExpandedOrder] = useState(null);
 
+    // Load shops on mount
     useEffect(() => {
       (async () => {
-        setLoading(true);
         try {
           const resp = await fetch('/api/shopee?action=status');
           const data = await resp.json();
-          setShopData(data);
+          setShops(data.shops || []);
         } catch (e) {
           console.error('Shopee status error:', e);
         } finally {
@@ -603,8 +613,76 @@ const App = () => {
       })();
     }, []);
 
-    const shop = shopData?.shops?.[0];
-    const isConnected = shop && shop.is_healthy;
+    // Load orders when filters change
+    useEffect(() => {
+      if (shops.length === 0) return;
+      loadOrders();
+    }, [selectedShop, page, statusFilter, shops]);
+
+    const loadOrders = async () => {
+      setOrdersLoading(true);
+      try {
+        const params = new URLSearchParams({ action: 'orders', page, limit: 30 });
+        if (selectedShop !== 'all') params.set('shop_id', selectedShop);
+        if (statusFilter) params.set('status', statusFilter);
+        const resp = await fetch(`/api/shopee?${params}`);
+        const data = await resp.json();
+        setOrders(data.orders || []);
+        setTotalPages(data.pages || 1);
+        setTotalOrders(data.total || 0);
+      } catch (e) {
+        console.error('Orders fetch error:', e);
+      } finally {
+        setOrdersLoading(false);
+      }
+    };
+
+    const handleSync = async (shopId) => {
+      setSyncing(true);
+      setSyncMsg('Sincronizando...');
+      const now = Math.floor(Date.now() / 1000);
+      const WINDOW = 15 * 24 * 60 * 60;
+      let timeFrom = now - 15 * 24 * 60 * 60;
+      try {
+        const result = await fetch('/api/shopee?action=sync_orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shop_id: shopId, time_from: timeFrom, time_to: now }),
+        }).then(r => r.json());
+        setSyncMsg(`Sync: ${result.orders_upserted || 0} pedidos (${result.duration_ms}ms)`);
+        loadOrders();
+      } catch (e) {
+        setSyncMsg('Erro no sync: ' + e.message);
+      } finally {
+        setSyncing(false);
+        setTimeout(() => setSyncMsg(''), 5000);
+      }
+    };
+
+    const statusColors = {
+      COMPLETED: 'bg-green-100 text-green-700',
+      SHIPPED: 'bg-blue-100 text-blue-700',
+      READY_TO_SHIP: 'bg-yellow-100 text-yellow-700',
+      IN_CANCEL: 'bg-red-100 text-red-700',
+      CANCELLED: 'bg-gray-100 text-gray-500',
+      UNPAID: 'bg-orange-100 text-orange-700',
+      PROCESSED: 'bg-purple-100 text-purple-700',
+    };
+
+    const statusLabels = {
+      COMPLETED: 'Concluido',
+      SHIPPED: 'Enviado',
+      READY_TO_SHIP: 'Pronto p/ Envio',
+      IN_CANCEL: 'Cancelando',
+      CANCELLED: 'Cancelado',
+      UNPAID: 'Pendente',
+      PROCESSED: 'Processado',
+    };
+
+    const formatDate = (ts) => ts ? new Date(ts * 1000).toLocaleDateString('pt-BR') : '-';
+    const formatCurrency = (v) => v != null ? `R$ ${parseFloat(v).toFixed(2)}` : '-';
+
+    const isConnected = shops.length > 0;
 
     if (loading) {
       return (
@@ -629,87 +707,226 @@ const App = () => {
       );
     }
 
-    const modules = [
-      { id: 'pedidos', label: 'Pedidos', desc: 'Lista de pedidos, status, detalhes e itens vendidos', icon: ClipboardList, color: 'blue', available: true },
-      { id: 'produtos', label: 'Produtos', desc: 'Catalogo completo, estoque, precos e variantes', icon: Package, color: 'green', available: true },
-      { id: 'financeiro', label: 'Financeiro', desc: 'Saldo, comissoes, repasses e escrow', icon: DollarSign, color: 'emerald', available: true },
-      { id: 'performance', label: 'Performance', desc: 'Metricas da loja, taxa de cancelamento e avaliacao', icon: TrendingUp, color: 'purple', available: true },
-      { id: 'logistica', label: 'Logistica', desc: 'Rastreamento de envios e parametros de frete', icon: Truck, color: 'orange', available: true },
-      { id: 'devolucoes', label: 'Devolucoes', desc: 'Lista de devolucoes, motivos e status', icon: RefreshCw, color: 'red', available: true },
-    ];
+    // KPIs
+    const kpiOrders = orders.length;
+    const kpiRevenue = orders.reduce((s, o) => s + (parseFloat(o.total_amount) || 0), 0);
+    const kpiCommission = orders.reduce((s, o) => s + (parseFloat(o.commission_fee) || 0), 0);
+    const kpiPayout = orders.reduce((s, o) => s + (parseFloat(o.escrow_amount) || 0), 0);
 
-    // Sub-tab content
-    const renderSubContent = () => {
-      const currentModule = modules.find(m => subTab === m.id);
-      if (currentModule && subTab !== 'dashboard') {
-        return (
-          <div className="max-w-4xl mx-auto mt-8 text-center">
-            <div className={`w-16 h-16 bg-${currentModule.color}-100 rounded-2xl mx-auto mb-4 flex items-center justify-center`}>
-              <currentModule.icon className={`text-${currentModule.color}-600 w-8 h-8`} />
-            </div>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">{currentModule.label}</h2>
-            <p className="text-gray-500 mb-4">{currentModule.desc}</p>
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-orange-50 text-[#EE4D2D] rounded-xl text-sm font-medium">
-              <Clock size={16} />
-              Em desenvolvimento - dados serao carregados via Shopee API v2
-            </div>
-          </div>
-        );
-      }
+    // Dashboard sub-tab
+    if (subTab === 'dashboard') {
+      const modules = [
+        { id: 'pedidos', label: 'Pedidos', desc: `${totalOrders} pedidos sincronizados`, icon: ClipboardList, color: 'blue' },
+        { id: 'financeiro', label: 'Financeiro', desc: 'Comissoes, taxas e repasses', icon: DollarSign, color: 'emerald' },
+        { id: 'logistica', label: 'Logistica', desc: 'Rastreamento e envios', icon: Truck, color: 'orange' },
+      ];
 
-      // Dashboard (default)
       return (
-        <>
-          {/* Shop Info Card */}
-          <div className="bg-gradient-to-r from-[#EE4D2D] to-[#FF6633] rounded-2xl p-6 text-white shadow-lg mb-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/70 text-sm">Loja Conectada</p>
-                <h2 className="text-2xl font-bold mt-1">{shop.shop_name}</h2>
-                <div className="flex items-center gap-4 mt-3">
-                  <span className="text-sm bg-white/20 px-3 py-1 rounded-full">ID: {shop.shop_id}</span>
-                  <span className="text-sm bg-white/20 px-3 py-1 rounded-full">{shop.region}</span>
-                  <span className={`text-sm px-3 py-1 rounded-full ${shop.token_status === 'valid' ? 'bg-green-400/30' : 'bg-red-400/30'}`}>
-                    Token: {shop.token_status === 'valid' ? 'Valido' : 'Expirado'}
+        <div className="p-6">
+          {/* Shop cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            {shops.map(s => (
+              <div key={s.shop_id} className="bg-gradient-to-r from-[#EE4D2D] to-[#FF6633] rounded-2xl p-5 text-white shadow-lg">
+                <p className="text-white/70 text-xs">Loja Conectada</p>
+                <h3 className="text-lg font-bold mt-1">{s.shop_name}</h3>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">ID: {s.shop_id}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${s.token_status === 'valid' ? 'bg-green-400/30' : 'bg-red-400/30'}`}>
+                    {s.token_status === 'valid' ? 'Ativo' : 'Token Expirado'}
                   </span>
                 </div>
               </div>
-              <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center">
-                <Store className="w-8 h-8" />
-              </div>
-            </div>
-            <p className="text-white/60 text-xs mt-4">Conectada em {new Date(shop.connected_at).toLocaleDateString('pt-BR')}</p>
+            ))}
           </div>
 
-          {/* Module Cards */}
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Modulos Disponiveis</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* Module cards */}
+          <h3 className="text-lg font-bold text-gray-800 mb-4">Modulos</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {modules.map(mod => (
-              <button key={mod.id}
-                onClick={() => setActiveTab(`shopee_${mod.id}`)}
-                className="bg-white rounded-xl p-5 border border-gray-100 hover:border-[#EE4D2D]/30 hover:shadow-lg transition-all duration-200 text-left group"
-              >
-                <div className="flex items-center gap-3 mb-3">
-                  <div className={`w-10 h-10 bg-${mod.color}-100 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform`}>
-                    <mod.icon className={`text-${mod.color}-600 w-5 h-5`} />
-                  </div>
+              <button key={mod.id} onClick={() => setActiveTab(`shopee_${mod.id}`)}
+                className="bg-white rounded-xl p-5 border border-gray-100 hover:border-[#EE4D2D]/30 hover:shadow-lg transition-all text-left group">
+                <div className="flex items-center gap-3 mb-2">
+                  <mod.icon className="text-[#EE4D2D] w-6 h-6" />
                   <h4 className="font-bold text-gray-800">{mod.label}</h4>
                 </div>
                 <p className="text-sm text-gray-500">{mod.desc}</p>
-                <div className="flex items-center gap-1 mt-3 text-[#EE4D2D] text-xs font-medium">
-                  <span>Acessar</span>
-                  <ArrowRight size={12} />
-                </div>
               </button>
             ))}
           </div>
-        </>
+        </div>
       );
-    };
+    }
 
+    // Pedidos / Financeiro / Logistica views - all show orders table
     return (
       <div className="p-6">
-        {renderSubContent()}
+        {/* Header + Filters */}
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <div>
+            <h2 className="text-xl font-bold text-gray-800">Pedidos Shopee</h2>
+            <p className="text-sm text-gray-500">{totalOrders} pedidos encontrados</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Shop selector */}
+            <select value={selectedShop} onChange={e => { setSelectedShop(e.target.value); setPage(1); }}
+              className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-[#EE4D2D]/30 focus:border-[#EE4D2D] outline-none">
+              <option value="all">Todas as Lojas</option>
+              {shops.map(s => <option key={s.shop_id} value={s.shop_id}>{s.shop_name}</option>)}
+            </select>
+            {/* Status filter */}
+            <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+              className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-[#EE4D2D]/30 focus:border-[#EE4D2D] outline-none">
+              <option value="">Todos Status</option>
+              <option value="COMPLETED">Concluido</option>
+              <option value="SHIPPED">Enviado</option>
+              <option value="READY_TO_SHIP">Pronto p/ Envio</option>
+              <option value="IN_CANCEL">Cancelando</option>
+              <option value="CANCELLED">Cancelado</option>
+              <option value="UNPAID">Pendente</option>
+            </select>
+            {/* Sync button */}
+            <button onClick={() => handleSync(selectedShop !== 'all' ? selectedShop : shops[0]?.shop_id)}
+              disabled={syncing}
+              className="flex items-center gap-2 px-4 py-2 bg-[#EE4D2D] text-white rounded-xl text-sm font-medium hover:bg-[#d4411f] disabled:opacity-50 transition-colors">
+              <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
+              {syncing ? 'Sincronizando...' : 'Sync Agora'}
+            </button>
+          </div>
+        </div>
+
+        {syncMsg && (
+          <div className="mb-4 px-4 py-2 bg-green-50 text-green-700 rounded-xl text-sm">{syncMsg}</div>
+        )}
+
+        {/* KPIs */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-xl p-4 border border-gray-100">
+            <p className="text-xs text-gray-500">Pedidos (pagina)</p>
+            <p className="text-2xl font-bold text-gray-800">{kpiOrders}</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 border border-gray-100">
+            <p className="text-xs text-gray-500">Receita (pagina)</p>
+            <p className="text-2xl font-bold text-gray-800">{formatCurrency(kpiRevenue)}</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 border border-gray-100">
+            <p className="text-xs text-gray-500">Comissao Shopee</p>
+            <p className="text-2xl font-bold text-red-600">{formatCurrency(kpiCommission)}</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 border border-gray-100">
+            <p className="text-xs text-gray-500">Repasse Vendedor</p>
+            <p className="text-2xl font-bold text-green-600">{formatCurrency(kpiPayout)}</p>
+          </div>
+        </div>
+
+        {/* Orders Table */}
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+          {ordersLoading ? (
+            <div className="flex items-center justify-center h-40">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#EE4D2D]" />
+            </div>
+          ) : orders.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">
+              <ClipboardList className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p>Nenhum pedido encontrado</p>
+              <p className="text-xs mt-1">Clique em "Sync Agora" para puxar pedidos da API</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600">Pedido</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600">Loja</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600">Status</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600">Comprador</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-600">Total</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-600">Comissao</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-600">Taxa Servico</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-600">Repasse</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600">Data</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600">Frete</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orders.map(o => (
+                    <React.Fragment key={o.order_sn}>
+                      <tr className="border-b border-gray-50 hover:bg-orange-50/30 cursor-pointer transition-colors"
+                        onClick={() => setExpandedOrder(expandedOrder === o.order_sn ? null : o.order_sn)}>
+                        <td className="py-3 px-4 font-mono text-xs text-gray-700">{o.order_sn}</td>
+                        <td className="py-3 px-4">
+                          <span className="text-xs bg-orange-50 text-[#EE4D2D] px-2 py-0.5 rounded-full">{o.shop_name}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColors[o.order_status] || 'bg-gray-100 text-gray-600'}`}>
+                            {statusLabels[o.order_status] || o.order_status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-gray-700">{o.buyer_username || '-'}</td>
+                        <td className="py-3 px-4 text-right font-medium text-gray-800">{formatCurrency(o.total_amount)}</td>
+                        <td className="py-3 px-4 text-right text-red-600 font-medium">
+                          {o.has_escrow ? formatCurrency(o.commission_fee) : <span className="text-gray-300 text-xs">-</span>}
+                        </td>
+                        <td className="py-3 px-4 text-right text-orange-600 font-medium">
+                          {o.has_escrow ? formatCurrency(o.service_fee) : <span className="text-gray-300 text-xs">-</span>}
+                        </td>
+                        <td className="py-3 px-4 text-right text-green-600 font-medium">
+                          {o.has_escrow ? formatCurrency(o.escrow_amount) : <span className="text-gray-300 text-xs">-</span>}
+                        </td>
+                        <td className="py-3 px-4 text-gray-500 text-xs">{formatDate(o.create_time)}</td>
+                        <td className="py-3 px-4 text-xs text-gray-500">{o.shipping_carrier || '-'}</td>
+                      </tr>
+                      {expandedOrder === o.order_sn && (
+                        <tr>
+                          <td colSpan={10} className="bg-gray-50 px-6 py-4">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3 text-xs">
+                              <div><span className="text-gray-400">Frete Real:</span> <span className="font-medium">{formatCurrency(o.actual_shipping_fee)}</span></div>
+                              <div><span className="text-gray-400">Pagamento:</span> <span className="font-medium">{o.payment_method || '-'}</span></div>
+                              <div><span className="text-gray-400">Tracking:</span> <span className="font-mono">{o.tracking_number || '-'}</span></div>
+                              <div><span className="text-gray-400">Desconto Shopee:</span> <span className="font-medium">{formatCurrency(o.shopee_discount)}</span></div>
+                            </div>
+                            {o.items && (() => { try { const items = typeof o.items === 'string' ? JSON.parse(o.items) : o.items; return items.length > 0 ? (
+                              <div>
+                                <p className="text-xs font-semibold text-gray-600 mb-2">Itens do Pedido:</p>
+                                <div className="space-y-1">
+                                  {items.map((it, idx) => (
+                                    <div key={idx} className="flex items-center justify-between text-xs bg-white rounded-lg px-3 py-2">
+                                      <div className="flex-1">
+                                        <span className="font-medium text-gray-700">{it.item_name}</span>
+                                        {it.model_name && <span className="text-gray-400 ml-2">({it.model_name})</span>}
+                                        {it.item_sku && <span className="text-gray-300 ml-2">SKU: {it.item_sku}</span>}
+                                      </div>
+                                      <div className="flex items-center gap-4">
+                                        <span className="text-gray-500">Qtd: {it.quantity}</span>
+                                        <span className="font-medium text-gray-700">{formatCurrency(it.price)}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null; } catch { return null; } })()}
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+              <p className="text-xs text-gray-500">Pagina {page} de {totalPages} ({totalOrders} pedidos)</p>
+              <div className="flex gap-2">
+                <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page <= 1}
+                  className="px-3 py-1 text-sm bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-30 transition-colors">Anterior</button>
+                <button onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page >= totalPages}
+                  className="px-3 py-1 text-sm bg-[#EE4D2D] text-white rounded-lg hover:bg-[#d4411f] disabled:opacity-30 transition-colors">Proxima</button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     );
   };
