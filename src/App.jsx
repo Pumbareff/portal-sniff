@@ -597,16 +597,22 @@ const App = () => {
     const [syncing, setSyncing] = useState(false);
     const [syncMsg, setSyncMsg] = useState('');
     const [expandedOrder, setExpandedOrder] = useState(null);
+    const [dashboardData, setDashboardData] = useState([]);
 
-    // Load shops on mount
+    // Load shops + dashboard on mount
     useEffect(() => {
       (async () => {
         try {
-          const resp = await fetch('/api/shopee?action=status');
-          const data = await resp.json();
-          setShops(data.shops || []);
+          const [statusResp, dashResp] = await Promise.all([
+            fetch('/api/shopee?action=status'),
+            fetch('/api/shopee?action=dashboard'),
+          ]);
+          const statusData = await statusResp.json();
+          const dashData = await dashResp.json();
+          setShops(statusData.shops || []);
+          setDashboardData(dashData.summary || []);
         } catch (e) {
-          console.error('Shopee status error:', e);
+          console.error('Shopee init error:', e);
         } finally {
           setLoading(false);
         }
@@ -707,11 +713,13 @@ const App = () => {
       );
     }
 
-    // KPIs
-    const kpiOrders = orders.length;
-    const kpiRevenue = orders.reduce((s, o) => s + (parseFloat(o.total_amount) || 0), 0);
-    const kpiCommission = orders.reduce((s, o) => s + (parseFloat(o.commission_fee) || 0), 0);
-    const kpiPayout = orders.reduce((s, o) => s + (parseFloat(o.escrow_amount) || 0), 0);
+    // KPIs from dashboard (global) - filtered by selected shop
+    const filteredDash = selectedShop === 'all' ? dashboardData : dashboardData.filter(d => String(d.shop_id) === String(selectedShop));
+    const kpiOrders = filteredDash.reduce((s, d) => s + (d.total_orders || 0), 0);
+    const kpiRevenue = filteredDash.reduce((s, d) => s + parseFloat(d.total_revenue || 0), 0);
+    const kpiCommission = filteredDash.reduce((s, d) => s + parseFloat(d.total_commission || 0), 0);
+    const kpiPayout = filteredDash.reduce((s, d) => s + parseFloat(d.total_seller_payout || 0), 0);
+    const kpiAvgTicket = filteredDash.length > 0 ? filteredDash.reduce((s, d) => s + parseFloat(d.avg_ticket || 0), 0) / filteredDash.length : 0;
 
     // Dashboard sub-tab
     if (subTab === 'dashboard') {
@@ -723,20 +731,59 @@ const App = () => {
 
       return (
         <div className="p-6">
-          {/* Shop cards */}
+          {/* Global KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-white rounded-xl p-4 border border-gray-100">
+              <p className="text-xs text-gray-500">Total Pedidos (90d)</p>
+              <p className="text-2xl font-bold text-gray-800">{dashboardData.reduce((s,d) => s + (d.total_orders||0), 0).toLocaleString('pt-BR')}</p>
+            </div>
+            <div className="bg-white rounded-xl p-4 border border-gray-100">
+              <p className="text-xs text-gray-500">Receita Total</p>
+              <p className="text-2xl font-bold text-gray-800">{formatCurrency(dashboardData.reduce((s,d) => s + parseFloat(d.total_revenue||0), 0))}</p>
+            </div>
+            <div className="bg-white rounded-xl p-4 border border-gray-100">
+              <p className="text-xs text-gray-500">Concluidos</p>
+              <p className="text-2xl font-bold text-green-600">{dashboardData.reduce((s,d) => s + (d.completed_orders||0), 0).toLocaleString('pt-BR')}</p>
+            </div>
+            <div className="bg-white rounded-xl p-4 border border-gray-100">
+              <p className="text-xs text-gray-500">Lojas Ativas</p>
+              <p className="text-2xl font-bold text-[#EE4D2D]">{shops.length}</p>
+            </div>
+          </div>
+
+          {/* Shop cards with stats */}
+          <h3 className="text-lg font-bold text-gray-800 mb-4">Lojas Conectadas</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            {shops.map(s => (
-              <div key={s.shop_id} className="bg-gradient-to-r from-[#EE4D2D] to-[#FF6633] rounded-2xl p-5 text-white shadow-lg">
-                <p className="text-white/70 text-xs">Loja Conectada</p>
-                <h3 className="text-lg font-bold mt-1">{s.shop_name}</h3>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">ID: {s.shop_id}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${s.token_status === 'valid' ? 'bg-green-400/30' : 'bg-red-400/30'}`}>
-                    {s.token_status === 'valid' ? 'Ativo' : 'Token Expirado'}
-                  </span>
+            {shops.map(s => {
+              const dash = dashboardData.find(d => String(d.shop_id) === String(s.shop_id)) || {};
+              return (
+                <div key={s.shop_id} className="bg-gradient-to-br from-[#EE4D2D] to-[#FF6633] rounded-2xl p-5 text-white shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-white/70 text-xs">Loja Conectada</p>
+                      <h3 className="text-lg font-bold mt-1">{s.shop_name}</h3>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${s.token_status === 'valid' ? 'bg-green-400/30' : 'bg-red-400/30'}`}>
+                      {s.token_status === 'valid' ? 'Ativo' : 'Expirado'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-white/20">
+                    <div>
+                      <p className="text-white/60 text-xs">Pedidos</p>
+                      <p className="font-bold">{(dash.total_orders || 0).toLocaleString('pt-BR')}</p>
+                    </div>
+                    <div>
+                      <p className="text-white/60 text-xs">Receita</p>
+                      <p className="font-bold text-sm">R$ {((parseFloat(dash.total_revenue)||0)/1000).toFixed(1)}k</p>
+                    </div>
+                    <div>
+                      <p className="text-white/60 text-xs">Ticket</p>
+                      <p className="font-bold text-sm">R$ {parseFloat(dash.avg_ticket||0).toFixed(0)}</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Module cards */}
@@ -799,22 +846,26 @@ const App = () => {
         )}
 
         {/* KPIs */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <div className="bg-white rounded-xl p-4 border border-gray-100">
-            <p className="text-xs text-gray-500">Pedidos (pagina)</p>
-            <p className="text-2xl font-bold text-gray-800">{kpiOrders}</p>
+            <p className="text-xs text-gray-500">Total Pedidos</p>
+            <p className="text-2xl font-bold text-gray-800">{kpiOrders.toLocaleString('pt-BR')}</p>
           </div>
           <div className="bg-white rounded-xl p-4 border border-gray-100">
-            <p className="text-xs text-gray-500">Receita (pagina)</p>
+            <p className="text-xs text-gray-500">Receita Total</p>
             <p className="text-2xl font-bold text-gray-800">{formatCurrency(kpiRevenue)}</p>
           </div>
           <div className="bg-white rounded-xl p-4 border border-gray-100">
+            <p className="text-xs text-gray-500">Ticket Medio</p>
+            <p className="text-2xl font-bold text-blue-600">{formatCurrency(kpiAvgTicket)}</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 border border-gray-100">
             <p className="text-xs text-gray-500">Comissao Shopee</p>
-            <p className="text-2xl font-bold text-red-600">{formatCurrency(kpiCommission)}</p>
+            <p className="text-2xl font-bold text-red-600">{kpiCommission ? formatCurrency(kpiCommission) : <span className="text-gray-300 text-lg">Sincronizando...</span>}</p>
           </div>
           <div className="bg-white rounded-xl p-4 border border-gray-100">
             <p className="text-xs text-gray-500">Repasse Vendedor</p>
-            <p className="text-2xl font-bold text-green-600">{formatCurrency(kpiPayout)}</p>
+            <p className="text-2xl font-bold text-green-600">{kpiPayout ? formatCurrency(kpiPayout) : <span className="text-gray-300 text-lg">Sincronizando...</span>}</p>
           </div>
         </div>
 
