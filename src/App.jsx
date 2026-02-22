@@ -934,11 +934,24 @@ const App = () => {
                         <tr>
                           <td colSpan={10} className="bg-gray-50 px-6 py-4">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3 text-xs">
-                              <div><span className="text-gray-400">Frete Real:</span> <span className="font-medium">{formatCurrency(o.actual_shipping_fee)}</span></div>
+                              <div><span className="text-gray-400">Valor Produto:</span> <span className="font-bold text-gray-800">{formatCurrency(o.product_amount || (o.total_amount - (o.actual_shipping_fee || 0)))}</span></div>
+                              <div><span className="text-gray-400">Frete (Comprador):</span> <span className="font-medium">{formatCurrency((o.total_amount || 0) - (o.product_amount || (o.total_amount - (o.actual_shipping_fee || 0))))}</span></div>
                               <div><span className="text-gray-400">Pagamento:</span> <span className="font-medium">{o.payment_method || '-'}</span></div>
                               <div><span className="text-gray-400">Tracking:</span> <span className="font-mono">{o.tracking_number || '-'}</span></div>
-                              <div><span className="text-gray-400">Desconto Shopee:</span> <span className="font-medium">{formatCurrency(o.shopee_discount)}</span></div>
                             </div>
+                            {o.has_escrow && (
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3 text-xs bg-orange-50 rounded-lg p-3">
+                                <div><span className="text-gray-500">Comissao Shopee:</span> <span className="font-bold text-red-600">{formatCurrency(o.commission_fee)}</span></div>
+                                <div><span className="text-gray-500">Taxa Servico:</span> <span className="font-bold text-orange-600">{formatCurrency(o.service_fee)}</span></div>
+                                <div><span className="text-gray-500">Repasse Vendedor:</span> <span className="font-bold text-green-600">{formatCurrency(o.escrow_amount)}</span></div>
+                                <div><span className="text-gray-500">Desconto Shopee:</span> <span className="font-medium">{formatCurrency(o.shopee_discount)}</span></div>
+                              </div>
+                            )}
+                            {!o.has_escrow && (
+                              <div className="text-xs text-gray-400 mb-3 bg-gray-100 rounded-lg p-3">
+                                Dados financeiros (comissao, taxas, repasse) disponiveis apos o pedido ser concluido.
+                              </div>
+                            )}
                             {o.items && (() => { try { const items = typeof o.items === 'string' ? JSON.parse(o.items) : o.items; return items.length > 0 ? (
                               <div>
                                 <p className="text-xs font-semibold text-gray-600 mb-2">Itens do Pedido:</p>
