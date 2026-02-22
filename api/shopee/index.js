@@ -464,20 +464,39 @@ async function handleSyncEscrow(req, res) {
   const startedAt = Date.now();
 
   try {
-    // Get COMPLETED orders missing escrow
-    const { data: allCompleted } = await supabase
-      .from('shopee_orders')
-      .select('order_sn')
-      .eq('shop_id', shopIdInt)
-      .eq('order_status', 'COMPLETED');
+    // Get COMPLETED orders missing escrow (paginate to avoid Supabase 1000-row default limit)
+    let allCompleted = [];
+    let offset = 0;
+    const PAGE = 1000;
+    while (true) {
+      const { data: batch } = await supabase
+        .from('shopee_orders')
+        .select('order_sn')
+        .eq('shop_id', shopIdInt)
+        .eq('order_status', 'COMPLETED')
+        .range(offset, offset + PAGE - 1);
+      if (!batch || batch.length === 0) break;
+      allCompleted = allCompleted.concat(batch);
+      if (batch.length < PAGE) break;
+      offset += PAGE;
+    }
 
-    const { data: existingEscrow } = await supabase
-      .from('shopee_escrow')
-      .select('order_sn')
-      .eq('shop_id', shopIdInt);
+    let existingEscrow = [];
+    offset = 0;
+    while (true) {
+      const { data: batch } = await supabase
+        .from('shopee_escrow')
+        .select('order_sn')
+        .eq('shop_id', shopIdInt)
+        .range(offset, offset + PAGE - 1);
+      if (!batch || batch.length === 0) break;
+      existingEscrow = existingEscrow.concat(batch);
+      if (batch.length < PAGE) break;
+      offset += PAGE;
+    }
 
-    const existingSet = new Set((existingEscrow || []).map(e => e.order_sn));
-    const pending = (allCompleted || []).filter(o => !existingSet.has(o.order_sn)).map(o => o.order_sn);
+    const existingSet = new Set(existingEscrow.map(e => e.order_sn));
+    const pending = allCompleted.filter(o => !existingSet.has(o.order_sn)).map(o => o.order_sn);
 
     // Process only batchSize orders per call
     const batch = pending.slice(0, batchSize);
@@ -534,6 +553,7 @@ async function handleSyncEscrow(req, res) {
       shop_id: shopIdInt,
       escrow_fetched: fetched,
       escrow_pending: remaining,
+      remaining,
       has_more: remaining > 0,
       duration_ms: Date.now() - startedAt,
     });
