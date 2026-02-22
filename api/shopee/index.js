@@ -721,8 +721,12 @@ async function handleOrders(req, res) {
       o.escrow_amount = esc?.escrow_amount || null;
       o.order_income = esc?.order_income || null;
       o.has_escrow = !!esc;
-      // Product amount = total minus shipping (what the seller actually sold for)
-      o.product_amount = Math.round(((parseFloat(o.total_amount) || 0) - (parseFloat(o.actual_shipping_fee) || 0)) * 100) / 100;
+      // Product amount = sum of item prices (what the seller actually sold for)
+      // total_amount includes buyer shipping which inflates the number
+      let itemsArr = o.items;
+      if (typeof itemsArr === 'string') { try { itemsArr = JSON.parse(itemsArr); } catch(e) { itemsArr = []; } }
+      const itemTotal = (itemsArr || []).reduce((sum, it) => sum + (parseFloat(it.price) || 0) * (parseInt(it.quantity) || 1), 0);
+      o.product_amount = itemTotal > 0 ? Math.round(itemTotal * 100) / 100 : Math.round(((parseFloat(o.total_amount) || 0) - (parseFloat(o.actual_shipping_fee) || 0)) * 100) / 100;
     });
   }
 
