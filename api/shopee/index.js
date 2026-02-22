@@ -491,24 +491,26 @@ async function handleSyncEscrow(req, res) {
       try {
         const data = await shopeeApiCall('/payment/get_escrow_detail', { order_sn: orderSn }, shopIdInt);
         const resp = data.response || {};
+        // Shopee nests financial data under response.order_income
+        const income = resp.order_income || resp;
 
         const row = {
           order_sn: orderSn,
           shop_id: shopIdInt,
-          order_income: parseFloat(resp.order_income || 0),
-          buyer_total_amount: parseFloat(resp.buyer_total_amount || 0),
-          original_price: parseFloat(resp.original_price || 0),
-          seller_discount: parseFloat(resp.seller_discount || 0),
-          shopee_discount: parseFloat(resp.shopee_discount || 0),
-          voucher_from_seller: parseFloat(resp.voucher_from_seller || 0),
-          voucher_from_shopee: parseFloat(resp.voucher_from_shopee || 0),
-          coins: parseFloat(resp.coins || 0),
-          buyer_paid_shipping_fee: parseFloat(resp.buyer_paid_shipping_fee || 0),
-          commission_fee: parseFloat(resp.commission_fee || 0),
-          service_fee: parseFloat(resp.service_fee || 0),
-          transaction_fee: parseFloat(resp.final_product_protection || resp.transaction_fee || 0),
-          escrow_amount: parseFloat(resp.escrow_amount || resp.order_income || 0),
-          escrow_tax: parseFloat(resp.escrow_tax || 0),
+          order_income: parseFloat(income.escrow_amount || 0),
+          buyer_total_amount: parseFloat(income.buyer_total_amount || resp.buyer_total_amount || 0),
+          original_price: parseFloat(income.original_price || resp.original_price || 0),
+          seller_discount: parseFloat(income.seller_discount || 0),
+          shopee_discount: parseFloat(income.shopee_discount || 0),
+          voucher_from_seller: parseFloat(income.voucher_from_seller || 0),
+          voucher_from_shopee: parseFloat(income.voucher_from_shopee || 0),
+          coins: parseFloat(income.coins || 0),
+          buyer_paid_shipping_fee: parseFloat(income.buyer_paid_shipping_fee || 0),
+          commission_fee: parseFloat(income.commission_fee || 0),
+          service_fee: parseFloat(income.service_fee || 0),
+          transaction_fee: parseFloat(income.final_product_protection || income.seller_transaction_fee || 0),
+          escrow_amount: parseFloat(income.escrow_amount || 0),
+          escrow_tax: parseFloat(income.escrow_tax || 0),
           raw_escrow: JSON.stringify(resp),
           synced_at: new Date().toISOString(),
         };
