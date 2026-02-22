@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import DefesaCatalogo from './components/defesa/DefesaCatalogo';
+import PesquisaMercado from './components/pesquisa/PesquisaMercado';
 import MarketingHubView from './components/marketing/MarketingHubView';
+import GeradorPromptsView from './components/marketing/GeradorPromptsView';
+import MetricasKPIsView from './components/marketing/MetricasKPIsView';
 import ControlePagamentosView from './components/compras/ControlePagamentosView';
 import GestaoKanbanView from './components/kanban/GestaoKanbanView';
 import {
@@ -54,7 +57,8 @@ import {
   Upload,
   Compass,
   ShoppingCart,
-  Store
+  Store,
+  Microscope
 } from 'lucide-react';
 import {
   BarChart,
@@ -1308,7 +1312,8 @@ const App = () => {
         times: false,
         sku: false,
         pedidos: false,
-        analise_vendas: false
+        analise_vendas: false,
+        pesquisa_mercado: false
       };
 
       await supabase
@@ -1359,7 +1364,8 @@ const App = () => {
         preco: formData.get('preco') === 'on',
         tracker: formData.get('tracker') === 'on',
         sobre_am: formData.get('sobre_am') === 'on',
-        analise_vendas: formData.get('analise_vendas') === 'on'
+        analise_vendas: formData.get('analise_vendas') === 'on',
+        pesquisa_mercado: formData.get('pesquisa_mercado') === 'on'
       };
 
       await supabase
@@ -1678,7 +1684,7 @@ const App = () => {
                 <div>
                   <h4 className="font-bold text-gray-700 mb-3">Modulos Principais</h4>
                   <div className="grid grid-cols-2 gap-3">
-                    {['dashboard', 'academy', 'recebimento', 'precificacao', 'agua_marinha', 'vendedor', 'times', 'sku', 'pedidos', 'marketing', 'fulfillment', 'analise_vendas'].map(perm => (
+                    {['dashboard', 'academy', 'recebimento', 'precificacao', 'agua_marinha', 'vendedor', 'times', 'sku', 'pedidos', 'marketing', 'fulfillment', 'analise_vendas', 'pesquisa_mercado'].map(perm => (
                       <label key={perm} className="flex items-center gap-2 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
                         <input
                           type="checkbox"
@@ -1734,6 +1740,7 @@ const App = () => {
       { id: 'fulfillment', label: 'Fulfillment', icon: Warehouse, permission: 'fulfillment' },
       { id: 'precificacao', label: 'Precificacao', icon: DollarSign, permission: 'precificacao' },
       { id: 'analisevendas', label: 'Analise de Vendas', icon: TrendingUp, permission: 'analise_vendas' },
+      { id: 'pesquisamercado', label: 'Pesquisa de Mercado', icon: Microscope, permission: 'pesquisa_mercado' },
       { id: 'shopee', label: 'Shopee', icon: Store, permission: 'admin' },
       { id: 'integracoes', label: 'Integracoes', icon: Compass, permission: 'admin' },
     ];
@@ -1753,13 +1760,13 @@ const App = () => {
     const sections = [
       { label: 'PRINCIPAL', ids: ['dashboard', 'academy'] },
       { label: 'OPERACOES', ids: ['recebimento', 'vendedor', 'compras', 'fulfillment', 'times'] },
-      { label: 'INTELIGENCIA', ids: ['analytics', 'analisevendas', 'precificacao'] },
+      { label: 'INTELIGENCIA', ids: ['analytics', 'analisevendas', 'precificacao', 'pesquisamercado'] },
       { label: 'MARKETING', ids: ['marketing'] },
       { label: 'MARKETPLACE', ids: ['shopee'] },
       { label: 'SISTEMA', ids: ['integracoes', 'admin'] },
     ];
 
-    const marketingChildren = ['marketing', 'produtos_comprados', 'gestao_anuncios', 'gestao_kanban', 'oportunidades', 'aguamarinha', 'padrao_sniff'];
+    const marketingChildren = ['marketing', 'gerador_prompts', 'metricas_kpis', 'produtos_comprados', 'gestao_anuncios', 'gestao_kanban', 'oportunidades', 'aguamarinha', 'padrao_sniff'];
     const comprasChildren = ['compras', 'controle_pagamentos'];
     const shopeeChildren = ['shopee', 'shopee_pedidos', 'shopee_produtos', 'shopee_financeiro', 'shopee_performance', 'shopee_logistica', 'shopee_devolucoes'];
 
@@ -1770,7 +1777,7 @@ const App = () => {
       const isComprasExpanded = isComprasGroup && comprasChildren.includes(activeTab);
       const isShopeeGroup = item.id === 'shopee';
       const isShopeeExpanded = isShopeeGroup && shopeeChildren.includes(activeTab);
-      const isActive = activeTab === item.id || (isMarketingGroup && ['produtos_comprados', 'gestao_anuncios', 'gestao_kanban', 'oportunidades', 'aguamarinha', 'padrao_sniff'].includes(activeTab)) || (isComprasGroup && comprasChildren.includes(activeTab)) || (isShopeeGroup && shopeeChildren.includes(activeTab));
+      const isActive = activeTab === item.id || (isMarketingGroup && ['gerador_prompts', 'metricas_kpis', 'produtos_comprados', 'gestao_anuncios', 'gestao_kanban', 'oportunidades', 'aguamarinha', 'padrao_sniff'].includes(activeTab)) || (isComprasGroup && comprasChildren.includes(activeTab)) || (isShopeeGroup && shopeeChildren.includes(activeTab));
 
       return (
         <div key={item.id} className="relative">
@@ -8921,6 +8928,7 @@ const App = () => {
       case 'fulfillment': return <FulfillmentView />;
       case 'precificacao': return <PrecificacaoView />;
       case 'analisevendas': return <AnaliseVendasView />;
+      case 'pesquisamercado': return <PesquisaMercado user={user} profile={profile} supabase={supabase} />;
       case 'shopee': return <ShopeeView subTab="dashboard" />;
       case 'shopee_pedidos': return <ShopeeView subTab="pedidos" />;
       case 'shopee_produtos': return <ShopeeView subTab="produtos" />;
@@ -8982,7 +8990,7 @@ const App = () => {
             >
               <Menu size={24} />
             </button>
-            <h1 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('aguamarinha', 'Agua Marinha').replace('gestao_anuncios', 'Gestao de Produtos Parados').replace('gestao_kanban', 'Kanban - Produtos Parados').replace('oportunidades', 'Oportunidades').replace('analisevendas', 'Analise de Vendas').replace('integracoes', 'Integracoes').replace('compras', 'Compras').replace('controle_pagamentos', 'Controle de Pagamentos').replace('produtos_comprados', 'Produtos Comprados')}</h1>
+            <h1 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('aguamarinha', 'Agua Marinha').replace('gestao_anuncios', 'Gestao de Produtos Parados').replace('gestao_kanban', 'Kanban - Produtos Parados').replace('oportunidades', 'Oportunidades').replace('analisevendas', 'Analise de Vendas').replace('pesquisamercado', 'Pesquisa de Mercado').replace('integracoes', 'Integracoes').replace('compras', 'Compras').replace('controle_pagamentos', 'Controle de Pagamentos').replace('produtos_comprados', 'Produtos Comprados')}</h1>
           </div>
 
           <div className="flex items-center gap-6">
